@@ -1,8 +1,6 @@
 import streamlit as st
-import psycopg2
 import pandas as pd
 from datetime import datetime, date, time
-import os
 import numpy as np
 from sqlalchemy import create_engine, text
 
@@ -25,19 +23,17 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- CONEXÃO COM O BANCO DE DADOS (PROTEGIDA) ---
+# --- CONEXÃO COM O BANCO DE DADOS (SEGURA) ---
 def conectar_banco():
-    """Conecta ao banco usando Secrets para proteger a senha"""
-    # No Streamlit Cloud, configuramos a DB_URL em Settings > Secrets
+    """Conecta ao banco usando exclusivamente a URL definida nos Secrets"""
     if "DB_URL" in st.secrets:
         db_url = st.secrets["DB_URL"]
+        return create_engine(db_url)
     else:
-        # Caso queira rodar localmente no futuro, ele usará esta linha
-        # IMPORTANTE: Nunca coloque a senha do Supabase aqui se for enviar ao GitHub
-        db_url = "postgresql://postgres:SENHA_LOCAL@localhost:5432/postgres"
-    
-    engine = create_engine(db_url)
-    return engine
+        # Se não houver segredo, o app para aqui com um aviso claro
+        st.error("⚠️ Erro Crítico: A variável 'DB_URL' não foi encontrada nos Secrets.")
+        st.info("Acesse Settings > Secrets no Streamlit Cloud e adicione a sua URL de conexão.")
+        st.stop()
 
 # --- INICIALIZAÇÃO DO BANCO ---
 def inicializar_banco():
@@ -82,8 +78,7 @@ def inicializar_banco():
 try:
     inicializar_banco()
 except Exception as e:
-    st.error("Erro de conexão com o banco de dados.")
-    st.info("Certifique-se de configurar a DB_URL nos Secrets do Streamlit Cloud.")
+    st.error(f"Erro ao conectar com o banco de dados Supabase: {e}")
 
 # --- INTERFACE ---
 st.markdown("<h1 style='text-align: center; color: #1f77b4;'>🧠 ATENDIMENTO VIANA - CONSULTÓRIO DE PSICOLOGIA</h1>", unsafe_allow_html=True)
@@ -162,8 +157,8 @@ elif menu == "📅 Marcar Consulta":
                             {"id":paciente_id, "dt":data_hora, "pr":primeira, "vl":valor, "fm":forma})
                         conn.commit()
                     st.success("✅ Agendado!")
-    except:
-        st.error("Erro ao carregar lista de pacientes.")
+    except Exception as e:
+        st.error(f"Erro ao carregar lista: {e}")
 
 # 3. VER PACIENTES
 elif menu == "👥 Ver Pacientes":
@@ -172,8 +167,8 @@ elif menu == "👥 Ver Pacientes":
         engine = conectar_banco()
         df = pd.read_sql("SELECT id, nome_completo, telefone, profissao, data_cadastro FROM pacientes WHERE ativo = TRUE", engine)
         st.dataframe(df, use_container_width=True)
-    except:
-        st.error("Erro ao carregar dados.")
+    except Exception as e:
+        st.error(f"Erro ao carregar dados: {e}")
 
 # 4. AGENDA
 elif menu == "🗓️ Agenda da Semana":
@@ -186,8 +181,8 @@ elif menu == "🗓️ Agenda da Semana":
             ORDER BY c.data_consulta
         """, engine)
         st.dataframe(agenda_df, use_container_width=True)
-    except:
-        st.error("Erro ao carregar agenda.")
+    except Exception as e:
+        st.error(f"Erro ao carregar agenda: {e}")
 
 # 5. REGISTRAR REALIZADA
 elif menu == "✅ Registrar Consulta Realizada":
@@ -206,8 +201,8 @@ elif menu == "✅ Registrar Consulta Realizada":
                 st.rerun()
         else:
             st.info("Não há consultas agendadas pendentes.")
-    except:
-        st.error("Erro ao processar consultas.")
+    except Exception as e:
+        st.error(f"Erro ao processar: {e}")
 
 # 6. ESTATÍSTICAS
 elif menu == "📊 Estatísticas":
@@ -220,8 +215,8 @@ elif menu == "📊 Estatísticas":
         status_df = pd.read_sql("SELECT status, COUNT(*) as quantidade FROM consultas GROUP BY status", engine)
         if not status_df.empty:
             st.bar_chart(status_df.set_index('status'))
-    except:
-        st.info("Aguardando dados para gerar estatísticas.")
+    except Exception as e:
+        st.info("Aguardando dados suficientes.")
 
 # RODAPÉ
 st.markdown("---")
