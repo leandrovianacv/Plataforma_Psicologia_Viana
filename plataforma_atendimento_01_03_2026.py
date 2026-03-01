@@ -378,7 +378,242 @@ elif menu == "📅 Marcar Consulta":
         if 'conn' in locals() and conn:
             conn.close()
 
-# [RESTO DO CÓDIGO PERMANECE IGUAL - 3,4,5,6...]
+# 3. VER PACIENTES
+elif menu == "👥 Ver Pacientes":
+    st.header("👥 Lista de Pacientes")
+    
+    try:
+        conn = conectar_banco()
+        if conn is None:
+            st.error("❌ Não foi possível conectar ao banco de dados")
+            st.stop()
+            
+        pacientes_df = pd.read_sql("""
+            SELECT id, nome_completo, telefone, email, profissao, queixa_principal, 
+                   TO_CHAR(data_cadastro, 'DD/MM/YYYY') as data_cadastro
+            FROM pacientes 
+            WHERE ativo = TRUE
+            ORDER BY nome_completo
+        """, conn)
+        
+        if not pacientes_df.empty:
+            st.dataframe(pacientes_df, use_container_width=True)
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Total de Pacientes", len(pacientes_df))
+            with col2:
+                from datetime import datetime
+                primeiro_dia_mes = datetime.now().replace(day=1)
+                
+                cadastros_mes = 0
+                for data_str in pacientes_df['data_cadastro']:
+                    try:
+                        data_obj = datetime.strptime(data_str, '%d/%m/%Y')
+                        if data_obj >= primeiro_dia_mes:
+                            cadastros_mes += 1
+                    except:
+                        pass
+                
+                st.metric("Cadastros este Mês", cadastros_mes)
+        else:
+            st.info("📝 Nenhum paciente cadastrado")
+            
+    except Exception as e:
+        st.error(f"❌ Erro ao carregar pacientes: {e}")
+    finally:
+        if 'conn' in locals() and conn:
+            conn.close()
+
+# 4. AGENDA DA SEMANA  
+elif menu == "🗓️ Agenda da Semana":
+    st.header("🗓️ Agenda de Consultas")
+    
+    opcao_agenda = st.radio("Visualizar:", ["Dia Específico", "Próximos 7 Dias"], horizontal=True)
+    
+    try:
+        conn = conectar_banco()
+        if conn is None:
+            st.error("❌ Não foi possível conectar ao banco de dados")
+            st.stop()
+            
+        if opcao_agenda == "Dia Específico":
+            data_selecionada = st.date_input("Selecione a data:", value=date.today())
+            
+            agenda_df = pd.read_sql("""
+                SELECT p.nome_completo, c.data_consulta, 
+                       CASE WHEN c.primeira_consulta THEN 'Primeira' ELSE 'Retorno' END as tipo,
+                       c.status, c.valor_consulta
+                FROM consultas c
+                JOIN pacientes p ON c.paciente_id = p.id
+                WHERE DATE(c.data_consulta) = %s
+                ORDER BY c.data_consulta
+            """, conn, params=(data_selecionada,))
+        else:
+            agenda_df = pd.read_sql("""
+                SELECT p.nome_completo, c.data_consulta, 
+                       CASE WHEN c.primeira_consulta THEN 'Primeira' ELSE 'Retorno' END as tipo,
+                       c.status, c.valor_consulta
+                FROM consultas c
+                JOIN pacientes p ON c.paciente_id = p.id
+                WHERE c.data_consulta BETWEEN NOW() AND NOW() + INTERVAL '7 days'
+                ORDER BY c.data_consulta
+            """, conn)
+        
+        if not agenda_df.empty:
+            for _, row in agenda_df.iterrows():
+                with st.container():
+                    col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
+                    with col1:
+                        st.write(f"**{row['nome_completo']}**")
+                    with col2:
+                        st.write(f"🕐 {row['data_consulta'].strftime('%H:%M')}")
+                        st.write(f"📝 {row['tipo']}")
+                    with col3:
+                        status_color = {
+                            'agendada': 'blue',
+                            'realizada': 'green', 
+                            'cancelada': 'red',
+                            'falta': 'orange'
+                        }.get(row['status'], 'gray')
+                        st.markdown(f"**Status:** <span style='color:{status_color}'>{row['status'].title()}</span>", 
+                                  unsafe_allow_html=True)
+                    with col4:
+                        valor = converter_numpy_para_python(row['valor_consulta'])
+                        st.write(f"**{valor:,.0f} CVE**")
+                    st.divider()
+                    
+            total_consultas = len(agenda_df)
+            realizadas = len(agenda_df[agenda_df['status'] == 'realizada'])
+            st.metric("Total de Consultas", total_consultas, f"{realizadas} realizadas")
+        else:
+            st.info("📅 Nenhuma consulta agendada para o período selecionado")
+            
+    except Exception as e:
+        st.error(f"❌ Erro ao carregar agenda: {e}")
+    finally:
+        if 'conn' in locals() and conn:
+            conn.close()
+
+# 5. REGISTRAR CONSULTA REALIZADA
+elif menu == "✅ Registrar Consulta Realizada":
+    st.header("✅ Registrar Consulta Realizada")
+    
+    try:
+        conn = conectar_banco()
+        if conn is None:
+            st.error("❌ Não foi possível conectar ao banco de dados")
+            st.stop()
+            
+        consultas_df = pd.read_sql("""
+            SELECT c.id, p.nome_completo, c.data_consulta, c.valor_consulta
+            FROM consultas c
+            JOIN pacientes p ON c.paciente_id = p.id
+            WHERE c.status = 'agendada' AND c.data_consulta <= NOW() + INTERVAL '1 hour'
+            ORDER BY c.data_consulta
+        """, conn)
+        
+        if not consultas_df.empty:
+            consultas_df['display'] = consultas_df['nome_completo'] + " - " + consultas_df['data_consulta'].dt.strftime('%d/%m %H:%M')
+            consulta_selecionada = st.selectbox("Selecionar Consulta:", consultas_df['display'])
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("✅ Marcar como Realizada", type="primary"):
+                    consulta_id = consultas_df[consultas_df['display'] == consulta_selecionada].iloc[0]['id']
+                    consulta_id = converter_numpy_para_python(consulta_id)
+                    
+                    cur = conn.cursor()
+                    cur.execute("UPDATE consultas SET status = 'realizada' WHERE id = %s", (consulta_id,))
+                    conn.commit()
+                    st.success("✅ Consulta registrada como realizada!")
+                    st.rerun()
+            
+            with col2:
+                if st.button("❌ Marcar como Falta"):
+                    consulta_id = consultas_df[consultas_df['display'] == consulta_selecionada].iloc[0]['id']
+                    consulta_id = converter_numpy_para_python(consulta_id)
+                    
+                    cur = conn.cursor()
+                    cur.execute("UPDATE consultas SET status = 'falta' WHERE id = %s", (consulta_id,))
+                    conn.commit()
+                    st.warning("⚠️ Consulta registrada como falta")
+                    st.rerun()
+        else:
+            st.info("📝 Nenhuma consulta agendada para registrar")
+            
+    except Exception as e:
+        st.error(f"❌ Erro ao registrar consulta: {e}")
+    finally:
+        if 'conn' in locals() and conn:
+            conn.close()
+
+# 6. ESTATÍSTICAS
+elif menu == "📊 Estatísticas":
+    st.header("📊 Estatísticas do Consultório")
+    
+    try:
+        conn = conectar_banco()
+        if conn is None:
+            st.error("❌ Não foi possível conectar ao banco de dados")
+            st.stop()
+            
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            total_pacientes = pd.read_sql("SELECT COUNT(*) as total FROM pacientes WHERE ativo = TRUE", conn)
+            st.metric("Total de Pacientes", converter_numpy_para_python(total_pacientes.iloc[0]['total']))
+        
+        with col2:
+            consultas_mes = pd.read_sql("""
+                SELECT COUNT(*) as total 
+                FROM consultas 
+                WHERE EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM NOW())
+            """, conn)
+            st.metric("Consultas este Mês", converter_numpy_para_python(consultas_mes.iloc[0]['total']))
+        
+        with col3:
+            receita_mes = pd.read_sql("""
+                SELECT COALESCE(SUM(valor_consulta), 0) as total 
+                FROM consultas 
+                WHERE status = 'realizada' 
+                AND EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM NOW())
+            """, conn)
+            receita_valor = converter_numpy_para_python(receita_mes.iloc[0]['total'])
+            st.metric("Receita do Mês (CVE)", f"{receita_valor:,.0f}")
+        
+        with col4:
+            taxa_falta = pd.read_sql("""
+                SELECT 
+                    ROUND(
+                        COUNT(CASE WHEN status = 'falta' THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0),
+                        1
+                    ) as taxa
+                FROM consultas 
+                WHERE EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM NOW())
+            """, conn)
+            taxa_valor = converter_numpy_para_python(taxa_falta.iloc[0]['taxa']) if not pd.isna(taxa_falta.iloc[0]['taxa']) else 0
+            st.metric("Taxa de Faltas (%)", f"{taxa_valor}")
+        
+        st.subheader("📊 Consultas por Status (Este Mês)")
+        status_df = pd.read_sql("""
+            SELECT status, COUNT(*) as quantidade
+            FROM consultas
+            WHERE EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM NOW())
+            GROUP BY status
+        """, conn)
+        
+        if not status_df.empty:
+            status_df['quantidade'] = status_df['quantidade'].apply(converter_numpy_para_python)
+            st.bar_chart(status_df.set_index('status'))
+        else:
+            st.info("📊 Sem dados para o mês atual")
+            
+    except Exception as e:
+        st.error(f"❌ Erro ao gerar estatísticas: {e}")
+    finally:
+        if 'conn' in locals() and conn:
+            conn.close()
 
 # RODAPÉ PERSONALIZADO
 st.markdown("---")
