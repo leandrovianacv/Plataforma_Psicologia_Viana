@@ -47,12 +47,12 @@ else:
     )
 
 # --- CSS PERSONALIZADO E ATUALIZADO ---
-# NOVA PALETA: Fundo #FAFAFA, Destaque #007681 (Teal), Texto #333333, Cards #FFFFFF
+# NOVA PALETA: Fundo #FBFBFB, Destaque #7D9D85 (Verde Sálvia), Texto #333333, Cards #FFFFFF
 st.markdown("""
 <style>
     /* Estilo global e fontes */
     .stApp {
-        background-color: #FAFAFA; /* Cinza extremamente claro para o fundo */
+        background-color: #FBFBFB !important; /* Cor de fundo principal mais clara, puxando para o branco para um visual mais limpo e calmo */
     }
     
     /* Garantir cor preta (#333 para conforto visual) em todo o texto */
@@ -62,7 +62,7 @@ st.markdown("""
     
     /* Estilização da Sidebar (Barra Lateral) */
     .css-1d391kg, [data-testid="stSidebar"] {
-        background-color: #F0F2F5 !important; /* Cinza leve para diferenciar o menu */
+        background-color: #E9EFEC !important; /* Verde Sálvia claro para diferenciar o menu */
         border-right: 1px solid #E0E0E0;
     }
     
@@ -72,14 +72,14 @@ st.markdown("""
         color: #333333 !important;
     }
     
-    /* Cor preta para o texto dentro do menu de navegação (select box) */
-    [data-testid="stSidebar"] .stSelectbox [data-baseweb="select"] {
+    /* Cor preta para o texto dentro do menu de navegação (radio button) */
+    [data-testid="stSidebar"] .stRadio div[role="radiogroup"] label {
         color: #333333 !important;
     }
 
     /* Título principal - Belinda Viana */
     h1 {
-        color: #007681 !important; /* Cor de destaque (teal) para o nome */
+        color: #7D9D85 !important; /* Cor de destaque (teal) para o nome */
         text-align: center;
         font-size: 42px !important;
         font-weight: 700;
@@ -99,7 +99,7 @@ st.markdown("""
     /* Títulos de seção */
     h2 {
         color: #333333 !important;
-        border-bottom: 2px solid #007681;
+        border-bottom: 2px solid #7D9D85;
         padding-bottom: 10px;
         margin-top: 30px !important;
     }
@@ -115,7 +115,7 @@ st.markdown("""
     
     /* Botões modernizados */
     .stButton > button {
-        background-color: #007681 !important; /* Cor de destaque */
+        background-color: #7D9D85 !important; /* Cor de destaque */
         color: white !important;
         border: none;
         border-radius: 20px !important; /* Botões arredondados */
@@ -125,7 +125,7 @@ st.markdown("""
     }
     
     .stButton > button:hover {
-        background-color: #005F68 !important; /* Cor mais escura no hover */
+        background-color: #5F7A65 !important; /* Cor mais escura no hover */
         color: white !important;
     }
     
@@ -139,7 +139,7 @@ st.markdown("""
     }
     
     [data-testid="stMetricValue"] {
-        color: #007681 !important; /* Cor de destaque para o valor da métrica */
+        color: #7D9D85 !important; /* Cor de destaque para o valor da métrica */
         font-size: 32px !important;
     }
     
@@ -160,7 +160,7 @@ st.markdown("""
         text-align: center;
         color: #333333 !important;
         padding: 20px;
-        background-color: #F0F2F5; /* Cinza leve igual a sidebar */
+        background-color: #E9EFEC; /* Verde Sálvia claro conforme sidebar */
         border-radius: 8px;
         margin-top: 40px;
     }
@@ -247,13 +247,12 @@ def inicializar_banco():
 inicializar_banco()
 
 # HEADER PERSONALIZADO
-st.markdown("<h1>Belinda Viana</h1>", unsafe_allow_html=True)
-st.markdown("<h3>PSICÓLOGA CLÍNICA</h3>", unsafe_allow_html=True)
-st.markdown("<hr style='border: 1px solid #007681;'>", unsafe_allow_html=True)
+st.markdown("<div style='text-align: center'><h1>Belinda Viana</h1><h3>Psicóloga Clínica</h3></div>", unsafe_allow_html=True)
+st.markdown("<hr style='border: 1px solid #7D9D85;'>", unsafe_allow_html=True)
 
 # MENU PERSONALIZADO NA SIDEBAR
-st.sidebar.markdown("## 🧭 Navegação")
-menu = st.sidebar.selectbox("Selecione uma opção:", [
+st.sidebar.markdown("<h2 style='border:none; font-size: 20px;'>Navegação</h2>", unsafe_allow_html=True)
+menu = st.sidebar.radio("", [
     "➕ Cadastrar Paciente", 
     "📅 Marcar Consulta",
     "👥 Ver Pacientes", 
@@ -304,7 +303,7 @@ if menu == "➕ Cadastrar Paciente":
                                  placeholder="Observações relevantes...",
                                  height=80)
         
-        submit = st.form_submit_button("💾 Salvar Paciente")
+        submit = st.form_submit_button("Salvar Paciente")
         
         if submit:
             if nome and telefone and queixa_principal:
@@ -321,14 +320,14 @@ if menu == "➕ Cadastrar Paciente":
                              queixa_principal, medicacoes, observacoes)
                         )
                         conn.commit()
-                        st.success("✅ Paciente cadastrado com sucesso!")
+                        st.success("✨ Paciente registrado com sucesso!")
                         st.balloons()
                     except Exception as e:
                         st.error(f"❌ Erro ao salvar: {e}")
                     finally:
                         conn.close()
             else:
-                st.error("❌ Preencha os campos obrigatórios (*)")
+                st.error("Preencha os campos obrigatórios (*)")
 
 # 2. MARCAR CONSULTA  
 elif menu == "📅 Marcar Consulta":
@@ -361,7 +360,7 @@ elif menu == "📅 Marcar Consulta":
                     
                     observacoes = st.text_area("Observações Técnicas")
                     
-                    submit_agendar = st.form_submit_button("📅 Agendar Consulta")
+                    submit_agendar = st.form_submit_button("Agendar Consulta")
                     
                     if submit_agendar:
                         # Validar horário
@@ -384,7 +383,7 @@ elif menu == "📅 Marcar Consulta":
                                  forma_pagamento, observacoes)
                             )
                             conn.commit()
-                            st.success(f"✅ Consulta marcada para {data_consulta.strftime('%d/%m/%Y')} às {hora_consulta.strftime('%H:%M')}")
+                            st.success(f"✅ Consulta agendada para {data_consulta.strftime('%d/%m/%Y')} às {hora_consulta.strftime('%H:%M')}")
                             
         except Exception as e:
             st.error(f"❌ Erro: {e}")
@@ -410,7 +409,7 @@ elif menu == "👥 Ver Pacientes":
                 st.dataframe(pacientes_df, use_container_width=True)
                 st.metric("Total de Pacientes Ativos", len(pacientes_df))
             else:
-                st.info("📝 Nenhum paciente cadastrado.")
+                st.info("Nenhum paciente cadastrado.")
                 
         except Exception as e:
             st.error(f"❌ Erro ao carregar pacientes: {e}")
@@ -524,20 +523,20 @@ elif menu == "✅ Registrar Consulta Realizada":
                 col1, col2 = st.columns(2)
                 
                 with col1:
-                    if st.button("✅ Marcar como Realizada", use_container_width=True, type="primary"):
+                    if st.button("Marcar como Realizada", use_container_width=True, type="primary"):
                         cur = conn.cursor()
                         cur.execute("UPDATE consultas SET status = 'realizada' WHERE id = %s", (consulta_id,))
                         conn.commit()
-                        st.success("✅ Consulta registrada como realizada!")
+                        st.success("✅ Concluído!")
                         st.balloons()
                         # st.rerun()  # Descomentar se necessário no deployment
                 
                 with col2:
-                    if st.button("❌ Marcar como Falta", use_container_width=True):
+                    if st.button("Marcar como Falta", use_container_width=True):
                         cur = conn.cursor()
                         cur.execute("UPDATE consultas SET status = 'falta' WHERE id = %s", (consulta_id,))
                         conn.commit()
-                        st.warning("⚠️ Consulta registrada como falta.")
+                        st.warning("Falta registrada.")
                         # st.rerun() # Descomentar se necessário no deployment
             else:
                 st.info("📝 Nenhuma consulta pendente de registro para hoje.")
@@ -555,7 +554,7 @@ elif menu == "📊 Estatísticas":
     if conn:
         try:
             # Cards de Métricas Modernos (fundo branco definido no CSS)
-            col1, col2, col3, col4 = st.columns(4)
+            col1, col2, col3 = st.columns(3)
             
             # 1. Total Pacientes Ativos
             total_pac = pd.read_sql("SELECT COUNT(*) as total FROM pacientes WHERE ativo = TRUE", conn).iloc[0]['total']
@@ -576,33 +575,12 @@ elif menu == "📊 Estatísticas":
             """, conn).iloc[0]['total'] or 0.0
             rec_mes = converter_numpy_para_python(rec_mes)
             
-            # 4. Taxa de Faltas Mês Atual
-            res_fal = pd.read_sql("""
-                SELECT 
-                    COUNT(*) as total,
-                    COUNT(CASE WHEN status = 'falta' THEN 1 END) as faltas
-                FROM consultas 
-                WHERE status IN ('realizada', 'falta')
-                  AND EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM CURRENT_DATE)
-                  AND EXTRACT(YEAR FROM data_consulta) = EXTRACT(YEAR FROM CURRENT_DATE)
-            """, conn)
-            
-            total_atendimentos = res_fal.iloc[0]['total']
-            faltas = res_fal.iloc[0]['faltas']
-            
-            if total_atendimentos > 0:
-                taxa_faltas = (faltas / total_atendimentos) * 100
-            else:
-                taxa_faltas = 0.0
-            
             with col1:
-                st.metric("Pacientes Ativos", total_pac)
+                st.metric("Receita Mensal", f"{rec_mes:,.0f} CVE".replace(",", "."))
             with col2:
-                st.metric("Agenda do Mês", con_mes)
+                st.metric("Pacientes Ativos", total_pac)
             with col3:
-                st.metric("Receita Mês CVE", f"{rec_mes:,.0f}".replace(",", "."))
-            with col4:
-                st.metric("Taxa Faltas %", f"{taxa_faltas:.1f}%")
+                st.metric("Consultas no Mês", con_mes)
                 
             # Gráfico de Consultas por Status
             st.markdown("### 📈 Consultas Mês Atual por Status")
@@ -615,12 +593,6 @@ elif menu == "📊 Estatísticas":
             """, conn)
             
             if not chart_data.empty:
-                # Definir cores modernas para o gráfico de barras do Streamlit
-                color_scale = pd.DataFrame({
-                    'status': chart_data['status'],
-                    'color': ['#1E88E5', '#43A047', '#FB8C00'] # agendada, realizada, falta (pode variar se houver cancelada)
-                })
-                
                 st.bar_chart(chart_data.set_index('status'))
             else:
                 st.info("📊 Sem dados de consultas para o mês atual.")
@@ -634,6 +606,7 @@ elif menu == "📊 Estatísticas":
 st.markdown("---")
 st.markdown("""
 <div class='rodape'>
-    🧠 <b>Belinda Viana</b> - Psicóloga Clínica | 📧 Email: belindaviana08@gmail.com
+    🧠 <b>Belinda Viana</b> - Psicóloga Clínica | 📞 Contacto: +238 594 99 55<br>
+    📧 Email: belindaviana08@gmail.com
 </div>
 """, unsafe_allow_html=True)
