@@ -5,6 +5,7 @@ from datetime import datetime, date, time
 import os
 import numpy as np
 import warnings
+import base64
 warnings.filterwarnings('ignore')
 
 # CORREÇÃO 1: Função para converter numpy.int64
@@ -19,55 +20,67 @@ def converter_numpy_para_python(valor):
     else:
         return valor
 
-# Configuração da página com imagem como ícone
-st.set_page_config(
-    page_title="Belinda Viana - Psicóloga Clínica", 
-    page_icon="🧠",  # Temporário até ter a imagem
-    layout="wide"
-)
+# Função para carregar imagem como base64 (para o favicon)
+def get_image_base64(image_path):
+    """Converte imagem para base64"""
+    try:
+        with open(image_path, "rb") as img_file:
+            return base64.b64encode(img_file.read()).decode()
+    except:
+        return None
 
-# CSS PERSONALIZADO - Fundo branco em todas as áreas
+# Tenta carregar a imagem (assumindo que está na mesma pasta)
+img_base64 = get_image_base64("IMG-20260301-WA0000.jpg")
+
+# Configuração da página com imagem como ícone
+if img_base64:
+    st.set_page_config(
+        page_title="Belinda Viana - Psicóloga Clínica", 
+        page_icon=f"data:image/jpeg;base64,{img_base64}",
+        layout="wide"
+    )
+else:
+    st.set_page_config(
+        page_title="Belinda Viana - Psicóloga Clínica", 
+        page_icon="🧠",  # Fallback se a imagem não for encontrada
+        layout="wide"
+    )
+
+# CSS PERSONALIZADO - Fundo marrom claro, letras pretas
 st.markdown("""
 <style>
-    /* Fundo branco em toda a aplicação */
+    /* Fundo marrom claro */
     .stApp {
-        background-color: #FFFFFF;
-    }
-    
-    /* Garantir fundo branco em todos os componentes */
-    .stTextInput, .stSelectbox, .stDateInput, .stTimeInput, .stTextArea,
-    .stTextInput > div, .stSelectbox > div, .stDateInput > div, .stTimeInput > div, .stTextArea > div,
-    .stTextInput input, .stSelectbox select, .stDateInput input, .stTimeInput input, .stTextArea textarea {
-        background-color: #FFFFFF !important;
-        color: #000000 !important;
-    }
-    
-    /* Sidebar com fundo branco */
-    .css-1d391kg, [data-testid="stSidebar"] {
-        background-color: #FFFFFF !important;
+        background-color: #F5E6D3;  /* Marrom claro */
     }
     
     /* Letras pretas em todo o app */
-    .stApp, p, span, label, div, .stTextInput label, .stSelectbox label,
-    .stDateInput label, .stTimeInput label, .stTextArea label {
+    .stApp, p, span, label, div, .stTextInput label, .stSelectbox label {
         color: #000000 !important;
     }
     
     /* Título principal */
     h1 {
-        color: #8B5A2B !important;
+        color: #8B5A2B !important;  /* Marrom mais escuro para o título */
         text-align: center;
         font-size: 48px !important;
     }
     
     h3 {
         text-align: center;
-        color: #8B5A2B !important;
+        color: #5D3A1A !important;  /* Marrom escuro */
     }
     
     h2 {
         color: #8B5A2B !important;
-        border-bottom: 2px solid #D2B48C;
+        border-bottom: 2px solid #A9714B;
+    }
+    
+    /* Inputs com fundo branco e texto preto */
+    .stTextInput input, .stSelectbox select, .stDateInput input, .stTimeInput input, .stTextArea textarea {
+        background-color: white !important;
+        color: black !important;
+        border: 1px solid #A9714B !important;
     }
     
     /* Botões */
@@ -82,46 +95,56 @@ st.markdown("""
     
     .stButton > button:hover {
         background-color: #A9714B !important;
+        color: white !important;
+    }
+    
+    /* Sidebar com tom mais escuro */
+    .css-1d391kg {
+        background-color: #D2B48C !important;  /* Marrom mais escuro */
+    }
+    
+    /* Texto da sidebar */
+    .css-1d391kg, .css-1lcbmhc, .stSidebar p, .stSidebar span, .stSidebar label {
+        color: black !important;
     }
     
     /* Métricas */
     .css-1xarl3l {
-        background-color: #F9F9F9 !important;
+        background-color: white !important;
         border-radius: 10px;
         padding: 15px;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-        border: 1px solid #D2B48C;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
     }
     
     /* DataFrames */
     .stDataFrame {
-        background-color: #FFFFFF !important;
+        background-color: white !important;
         border-radius: 5px;
         padding: 10px;
     }
     
+    /* Mensagens de sucesso/erro */
+    .stSuccess, .stError, .stWarning, .stInfo {
+        border-radius: 5px;
+    }
+    
     /* Linha divisória */
     hr {
-        border-color: #D2B48C !important;
+        border-color: #A9714B !important;
     }
     
     /* Rodapé */
     .rodape {
         text-align: center;
-        color: #000000;
+        color: black;
         padding: 15px;
-        background-color: #F9F9F9;
+        background-color: #D2B48C;
         border-radius: 5px;
         margin-top: 20px;
-        border: 1px solid #D2B48C;
+        border: 1px solid #8B5A2B;
     }
 </style>
 """, unsafe_allow_html=True)
-
-# Título com o nome da imagem
-st.markdown("<h1>Belinda Viana</h1>", unsafe_allow_html=True)
-st.markdown("<h3>PSICÓLOGA CLÍNICA</h3>", unsafe_allow_html=True)
-st.markdown("---")
 
 # Conexão com Supabase (via Session Pooler) - VERSÃO SEGURA
 def conectar_banco():
@@ -220,8 +243,13 @@ if inicializar_banco():
 else:
     st.sidebar.error("❌ Falha na conexão com Supabase")
 
+# HEADER PERSONALIZADO - com o nome da imagem
+st.markdown("<h1>Belinda Viana</h1>", unsafe_allow_html=True)
+st.markdown("<h3>PSICÓLOGA CLÍNICA</h3>", unsafe_allow_html=True)
+st.markdown("---")
+
 # MENU PERSONALIZADO
-st.sidebar.markdown("## Navegação")
+st.sidebar.markdown("## 🧭 Navegação")
 menu = st.sidebar.selectbox("Selecione uma opção:", [
     "➕ Cadastrar Paciente", 
     "📅 Marcar Consulta",
@@ -249,7 +277,7 @@ def validar_horario(data_consulta, hora_consulta):
 
 # 1. CADASTRAR PACIENTE
 if menu == "➕ Cadastrar Paciente":
-    st.header("Cadastrar Novo Paciente")
+    st.header("👤 Cadastrar Novo Paciente")
     
     with st.form("form_paciente", clear_on_submit=True):
         col1, col2 = st.columns(2)
@@ -299,7 +327,7 @@ if menu == "➕ Cadastrar Paciente":
 
 # 2. MARCAR CONSULTA  
 elif menu == "📅 Marcar Consulta":
-    st.header("Marcar Nova Consulta")
+    st.header("📅 Marcar Nova Consulta")
     
     try:
         conn = conectar_banco()
@@ -367,7 +395,7 @@ elif menu == "📅 Marcar Consulta":
 
 # 3. VER PACIENTES
 elif menu == "👥 Ver Pacientes":
-    st.header("Lista de Pacientes")
+    st.header("👥 Lista de Pacientes")
     
     try:
         conn = conectar_banco()
@@ -414,7 +442,7 @@ elif menu == "👥 Ver Pacientes":
 
 # 4. AGENDA DA SEMANA  
 elif menu == "🗓️ Agenda da Semana":
-    st.header("Agenda de Consultas")
+    st.header("🗓️ Agenda de Consultas")
     
     opcao_agenda = st.radio("Visualizar:", ["Dia Específico", "Próximos 7 Dias"], horizontal=True)
     
@@ -458,11 +486,11 @@ elif menu == "🗓️ Agenda da Semana":
                         st.write(f"📝 {row['tipo']}")
                     with col3:
                         status_color = {
-                            'agendada': '#1f77b4',
-                            'realizada': '#2ecc71', 
-                            'cancelada': '#e74c3c',
-                            'falta': '#e67e22'
-                        }.get(row['status'], '#95a5a6')
+                            'agendada': 'blue',
+                            'realizada': 'green', 
+                            'cancelada': 'red',
+                            'falta': 'orange'
+                        }.get(row['status'], 'gray')
                         st.markdown(f"**Status:** <span style='color:{status_color}'>{row['status'].title()}</span>", 
                                   unsafe_allow_html=True)
                     with col4:
@@ -484,7 +512,7 @@ elif menu == "🗓️ Agenda da Semana":
 
 # 5. REGISTRAR CONSULTA REALIZADA
 elif menu == "✅ Registrar Consulta Realizada":
-    st.header("Registrar Consulta Realizada")
+    st.header("✅ Registrar Consulta Realizada")
     
     try:
         conn = conectar_banco()
@@ -506,7 +534,7 @@ elif menu == "✅ Registrar Consulta Realizada":
             
             col1, col2 = st.columns(2)
             with col1:
-                if st.button("✅ Marcar como Realizada"):
+                if st.button("✅ Marcar como Realizada", type="primary"):
                     consulta_id = consultas_df[consultas_df['display'] == consulta_selecionada].iloc[0]['id']
                     consulta_id = converter_numpy_para_python(consulta_id)
                     
@@ -537,7 +565,7 @@ elif menu == "✅ Registrar Consulta Realizada":
 
 # 6. ESTATÍSTICAS
 elif menu == "📊 Estatísticas":
-    st.header("Estatísticas do Consultório")
+    st.header("📊 Estatísticas do Consultório")
     
     try:
         conn = conectar_banco()
@@ -582,7 +610,7 @@ elif menu == "📊 Estatísticas":
             taxa_valor = converter_numpy_para_python(taxa_falta.iloc[0]['taxa']) if not pd.isna(taxa_falta.iloc[0]['taxa']) else 0
             st.metric("Taxa de Faltas (%)", f"{taxa_valor}")
         
-        st.subheader("Consultas por Status (Este Mês)")
+        st.subheader("📊 Consultas por Status (Este Mês)")
         status_df = pd.read_sql("""
             SELECT status, COUNT(*) as quantidade
             FROM consultas
