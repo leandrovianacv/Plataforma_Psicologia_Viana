@@ -3,10 +3,19 @@ import pandas as pd
 from datetime import datetime, date, time
 import numpy as np
 from sqlalchemy import create_engine, text
+import socket
+import time as tempo
+import os
+
+# --- CONFIGURAÇÃO DA PÁGINA ---
+st.set_page_config(
+    page_title="Atendimento Viana - Psicologia", 
+    page_icon="🧠",
+    layout="wide"
+)
 
 # --- FUNÇÃO DE CONVERSÃO DE TIPOS ---
 def converter_numpy_para_python(valor):
-    """Converte tipos numpy para tipos Python nativos para evitar erros de serialização"""
     if isinstance(valor, (np.integer, np.int64)):
         return int(valor)
     elif isinstance(valor, (np.floating, np.float64)):
@@ -16,36 +25,75 @@ def converter_numpy_para_python(valor):
     else:
         return valor
 
-# --- CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(
-    page_title="Atendimento Viana - Psicologia", 
-    page_icon="🧠",
-    layout="wide"
-)
+# --- FUNÇÃO PARA TESTAR CONEXÃO COM INTERNET ---
+def testar_conexao_internet():
+    try:
+        socket.create_connection(("8.8.8.8", 53), timeout=3)
+        return True
+    except OSError:
+        return False
 
-# --- CONEXÃO COM O BANCO DE DADOS (SEGURA) ---
-def conectar_banco():
-    """Conecta ao banco usando exclusivamente a URL definida nos Secrets do Streamlit Cloud"""
+# --- FUNÇÃO PARA VERIFICAR SECRETS ---
+def verificar_secrets():
     if "DB_URL" in st.secrets:
-        try:
-            db_url = st.secrets["DB_URL"]
-            # Criamos o motor de conexão via SQLAlchemy
-            return create_engine(db_url)
-        except Exception as e:
-            st.error(f"Erro na configuração da URL nos Secrets: {e}")
+        db_url = st.secrets["DB_URL"]
+        
+        if "[YOUR-PASSWORD]" in db_url:
+            st.error("❌ **ERRO: Substitua [YOUR-PASSWORD] pela senha real!**")
             st.stop()
+        
+        return db_url
     else:
-        # Se não houver segredo, o app exibe este aviso claro e para
-        st.error("⚠️ Erro Crítico: A variável 'DB_URL' não foi encontrada nos Secrets.")
-        st.info("Acesse Settings > Secrets no Streamlit Cloud e cole sua URL de conexão.")
+        return None
+
+# --- CONEXÃO COM O BANCO DE DADOS ---
+@st.cache_resource
+def conectar_banco():
+    if not testar_conexao_internet():
+        st.error("⚠️ **Sem conexão com a internet!**")
+        st.stop()
+    
+    db_url = verificar_secrets()
+    
+    if db_url is None:
+        st.error("⚠️ **Erro: DB_URL não encontrada!**")
+        st.info("""
+        Crie o arquivo `.streamlit/secrets.toml` com:
+        DB_URL = "postgresql://postgres.opuyirrrrzibpxzkrikk:SUA_SENHA@aws-1-eu-west-2.pooler.supabase.com:5432/postgres"
+        """)
+        st.stop()
+    
+    try:
+        engine = create_engine(
+            db_url,
+            pool_size=5,
+            max_overflow=10,
+            pool_timeout=30,
+            pool_recycle=3600,
+            connect_args={'connect_timeout': 15}
+        )
+        
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        
+        return engine
+        
+    except Exception as e:
+        erro_str = str(e)
+        
+        if "could not translate host name" in erro_str:
+            st.error("❌ **Erro: Host não encontrado! Use o Session Pooler**")
+        elif "password authentication" in erro_str.lower():
+            st.error("❌ **Erro: Senha incorreta!**")
+        else:
+            st.error(f"❌ **Erro:** {e}")
+        
         st.stop()
 
 # --- INICIALIZAÇÃO DO BANCO ---
 def inicializar_banco():
-    """Garante que as tabelas necessárias existam no banco de dados"""
     engine = conectar_banco()
     with engine.connect() as conn:
-        # Tabela pacientes
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS pacientes (
                 id SERIAL PRIMARY KEY,
@@ -62,8 +110,7 @@ def inicializar_banco():
                 data_cadastro TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         """))
-
-        # Tabela consultas
+        
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS consultas (
                 id SERIAL PRIMARY KEY,
@@ -71,7 +118,7 @@ def inicializar_banco():
                 data_consulta TIMESTAMP NOT NULL,
                 primeira_consulta BOOLEAN DEFAULT TRUE,
                 valor_consulta DECIMAL(10,2) DEFAULT 0,
-                status VARCHAR(20) DEFAULT 'agendada' CHECK (status IN ('agendada', 'realizada', 'cancelada', 'falta')),
+                status VARCHAR(20) DEFAULT 'agendada',
                 observacoes_tecnicas TEXT,
                 pagamento_realizado BOOLEAN DEFAULT FALSE,
                 forma_pagamento VARCHAR(50),
@@ -79,66 +126,68 @@ def inicializar_banco():
             );
         """))
         conn.commit()
+    return engine
 
-# Tenta inicializar o banco logo ao abrir o aplicativo
-try:
-    inicializar_banco()
-except Exception as e:
-    st.error(f"Falha ao conectar com o banco de dados: {e}")
-    st.info("Verifique se a sua conexão de internet está ativa e se os Secrets estão corretos.")
+# --- INICIALIZAÇÃO ---
+engine = inicializar_banco()
+st.sidebar.success("✅ Banco conectado")
 
 # --- INTERFACE ---
-st.markdown("<h1 style='text-align: center; color: #1f77b4;'>🧠 ATENDIMENTO VIANA - CONSULTÓRIO DE PSICOLOGIA</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center; color: #1f77b4;'>🧠 ATENDIMENTO VIANA</h1>", unsafe_allow_html=True)
 st.markdown("---")
 
 st.sidebar.markdown("## 🧭 Navegação")
-menu = st.sidebar.selectbox("Selecione uma opção:", [
+menu = st.sidebar.selectbox("Selecione:", [
     "➕ Cadastrar Paciente", 
     "📅 Marcar Consulta",
     "👥 Ver Pacientes", 
-    "🗓️ Agenda da Semana",
-    "✅ Registrar Consulta Realizada",
+    "🗓️ Agenda",
+    "✅ Registrar Consulta",
     "📊 Estatísticas"
 ])
 
 # 1. CADASTRAR PACIENTE
 if menu == "➕ Cadastrar Paciente":
-    st.header("👤 Cadastrar Novo Paciente")
-    with st.form("form_paciente", clear_on_submit=True):
+    st.header("👤 Cadastrar Paciente")
+    with st.form("form_paciente"):
         col1, col2 = st.columns(2)
         with col1:
-            nome = st.text_input("Nome Completo*", placeholder="Nome completo do paciente")
-            telefone = st.text_input("Telefone*", placeholder="+238 XXX XX XX") 
-            email = st.text_input("Email", placeholder="paciente@email.cv")
-            data_nascimento = st.date_input("Data de Nascimento", max_value=date.today())
+            nome = st.text_input("Nome Completo*")
+            telefone = st.text_input("Telefone*")
+            email = st.text_input("Email")
+            data_nascimento = st.date_input("Nascimento", max_value=date.today())
         with col2:
-            profissao = st.text_input("Profissão", placeholder="Profissão atual")
-            como_chegou = st.selectbox("Como chegou até nós", ["Indicação", "Internet", "Redes Sociais", "Outro"])
+            profissao = st.text_input("Profissão")
+            como_chegou = st.selectbox("Como chegou", ["Indicação", "Internet", "Redes Sociais", "Outro"])
             queixa_principal = st.text_area("Queixa Principal*", height=100)
-        medicacoes = st.text_input("Medicações Atuais")
-        observacoes = st.text_area("Observações Iniciais", height=80)
+        medicacoes = st.text_input("Medicações")
+        observacoes = st.text_area("Observações", height=80)
         
-        if st.form_submit_button("💾 Salvar Paciente"):
+        if st.form_submit_button("💾 Salvar"):
             if nome and telefone and queixa_principal:
                 try:
-                    engine = conectar_banco()
                     with engine.connect() as conn:
-                        query = text("""INSERT INTO pacientes 
-                            (nome_completo, telefone, email, data_nascimento, profissao, como_chegou, queixa_principal, medicacoes_atuais, observacoes_iniciais) 
-                            VALUES (:n, :t, :e, :d, :p, :c, :q, :m, :o)""")
-                        conn.execute(query, {"n":nome, "t":telefone, "e":email, "d":data_nascimento, "p":profissao, "c":como_chegou, "q":queixa_principal, "m":medicacoes, "o":observacoes})
+                        conn.execute(text("""
+                            INSERT INTO pacientes 
+                            (nome_completo, telefone, email, data_nascimento, profissao, 
+                             como_chegou, queixa_principal, medicacoes_atuais, observacoes_iniciais) 
+                            VALUES (:n, :t, :e, :d, :p, :c, :q, :m, :o)
+                        """), {
+                            "n":nome, "t":telefone, "e":email, "d":data_nascimento, 
+                            "p":profissao, "c":como_chegou, "q":queixa_principal, 
+                            "m":medicacoes, "o":observacoes
+                        })
                         conn.commit()
-                    st.success("✅ Paciente cadastrado com sucesso!")
+                    st.success("✅ Cadastrado!")
                 except Exception as e:
-                    st.error(f"Erro ao salvar: {e}")
+                    st.error(f"Erro: {e}")
             else:
-                st.error("❌ Preencha os campos obrigatórios (*)")
+                st.error("❌ Campos obrigatórios")
 
-# 2. MARCAR CONSULTA  
+# 2. MARCAR CONSULTA
 elif menu == "📅 Marcar Consulta":
-    st.header("📅 Marcar Nova Consulta")
+    st.header("📅 Marcar Consulta")
     try:
-        engine = conectar_banco()
         pacientes_df = pd.read_sql("SELECT id, nome_completo FROM pacientes WHERE ativo = TRUE", engine)
         
         if pacientes_df.empty:
@@ -147,86 +196,93 @@ elif menu == "📅 Marcar Consulta":
             with st.form("form_consulta"):
                 col1, col2 = st.columns(2)
                 with col1:
-                    paciente_nome = st.selectbox("Paciente*", pacientes_df['nome_completo'])
+                    paciente = st.selectbox("Paciente*", pacientes_df['nome_completo'])
                     data_c = st.date_input("Data*", min_value=date.today())
                     hora_c = st.time_input("Horário*", value=time(14, 0))
                 with col2:
                     primeira = st.checkbox("Primeira Consulta", value=True)
-                    valor = st.number_input("Valor (CVE)", value=2500.0 if primeira else 2000.0)
-                    forma = st.selectbox("Pagamento", ["Dinheiro", "Transferência", "MB Way", "Outro"])
+                    valor = st.number_input("Valor", value=2500.0 if primeira else 2000.0)
+                    forma = st.selectbox("Pagamento", ["Dinheiro", "Transferência", "MB Way"])
                 
                 if st.form_submit_button("📅 Agendar"):
-                    paciente_id = int(pacientes_df[pacientes_df['nome_completo'] == paciente_nome].iloc[0]['id'])
+                    paciente_id = int(pacientes_df[pacientes_df['nome_completo'] == paciente].iloc[0]['id'])
                     data_hora = datetime.combine(data_c, hora_c)
                     with engine.connect() as conn:
-                        conn.execute(text("""INSERT INTO consultas (paciente_id, data_consulta, primeira_consulta, valor_consulta, forma_pagamento) 
-                            VALUES (:id, :dt, :pr, :vl, :fm)"""), 
-                            {"id":paciente_id, "dt":data_hora, "pr":primeira, "vl":valor, "fm":forma})
+                        conn.execute(text("""
+                            INSERT INTO consultas 
+                            (paciente_id, data_consulta, primeira_consulta, valor_consulta, forma_pagamento) 
+                            VALUES (:id, :dt, :pr, :vl, :fm)
+                        """), {
+                            "id":paciente_id, "dt":data_hora, "pr":primeira, 
+                            "vl":valor, "fm":forma
+                        })
                         conn.commit()
-                    st.success("✅ Agendado com sucesso!")
+                    st.success("✅ Agendado!")
     except Exception as e:
-        st.error(f"Erro ao carregar lista de pacientes: {e}")
+        st.error(f"Erro: {e}")
 
 # 3. VER PACIENTES
 elif menu == "👥 Ver Pacientes":
-    st.header("👥 Lista de Pacientes")
+    st.header("👥 Pacientes")
     try:
-        engine = conectar_banco()
         df = pd.read_sql("SELECT id, nome_completo, telefone, profissao, data_cadastro FROM pacientes WHERE ativo = TRUE", engine)
-        st.dataframe(df, use_container_width=True)
+        st.dataframe(df)
     except Exception as e:
-        st.error(f"Erro ao carregar dados dos pacientes: {e}")
+        st.error(f"Erro: {e}")
 
 # 4. AGENDA
-elif menu == "🗓️ Agenda da Semana":
-    st.header("🗓️ Agenda de Consultas")
+elif menu == "🗓️ Agenda":
+    st.header("🗓️ Agenda")
     try:
-        engine = conectar_banco()
         agenda_df = pd.read_sql("""
             SELECT p.nome_completo, c.data_consulta, c.status, c.valor_consulta
             FROM consultas c JOIN pacientes p ON c.paciente_id = p.id
             ORDER BY c.data_consulta
         """, engine)
-        st.dataframe(agenda_df, use_container_width=True)
+        st.dataframe(agenda_df)
     except Exception as e:
-        st.error(f"Erro ao carregar agenda: {e}")
+        st.error(f"Erro: {e}")
 
-# 5. REGISTRAR REALIZADA
-elif menu == "✅ Registrar Consulta Realizada":
-    st.header("✅ Confirmar Atendimento")
+# 5. REGISTRAR CONSULTA
+elif menu == "✅ Registrar Consulta":
+    st.header("✅ Registrar Consulta")
     try:
-        engine = conectar_banco()
-        consultas_df = pd.read_sql("SELECT c.id, p.nome_completo, c.data_consulta FROM consultas c JOIN pacientes p ON c.paciente_id = p.id WHERE c.status = 'agendada'", engine)
+        consultas_df = pd.read_sql("""
+            SELECT c.id, p.nome_completo, c.data_consulta 
+            FROM consultas c JOIN pacientes p ON c.paciente_id = p.id 
+            WHERE c.status = 'agendada'
+        """, engine)
         
         if not consultas_df.empty:
-            selecao = st.selectbox("Escolha a consulta realizada:", consultas_df['nome_completo'])
+            consultas_df['display'] = consultas_df['nome_completo'] + " - " + consultas_df['data_consulta'].astype(str)
+            selecao = st.selectbox("Escolha a consulta:", consultas_df['display'])
+            
             if st.button("Marcar como Realizada"):
-                c_id = int(consultas_df[consultas_df['nome_completo'] == selecao].iloc[0]['id'])
+                idx = consultas_df[consultas_df['display'] == selecao].index[0]
+                c_id = int(consultas_df.loc[idx, 'id'])
                 with engine.connect() as conn:
                     conn.execute(text("UPDATE consultas SET status = 'realizada' WHERE id = :id"), {"id":c_id})
                     conn.commit()
+                st.success("✅ Registrada!")
                 st.rerun()
         else:
-            st.info("Não há consultas agendadas pendentes de registro.")
+            st.info("Sem consultas agendadas")
     except Exception as e:
-        st.error(f"Erro ao processar consultas: {e}")
+        st.error(f"Erro: {e}")
 
 # 6. ESTATÍSTICAS
 elif menu == "📊 Estatísticas":
-    st.header("📊 Resumo do Consultório")
+    st.header("📊 Estatísticas")
     try:
-        engine = conectar_banco()
         total = pd.read_sql("SELECT COUNT(*) as total FROM pacientes WHERE ativo = TRUE", engine).iloc[0]['total']
-        st.metric("Total de Pacientes Ativos", int(total))
+        st.metric("Total de Pacientes", int(total))
         
         status_df = pd.read_sql("SELECT status, COUNT(*) as quantidade FROM consultas GROUP BY status", engine)
         if not status_df.empty:
             st.bar_chart(status_df.set_index('status'))
-        else:
-            st.info("Aguardando dados para gerar gráficos.")
     except Exception as e:
-        st.error(f"Erro ao gerar estatísticas: {e}")
+        st.error(f"Erro: {e}")
 
 # RODAPÉ
 st.markdown("---")
-st.markdown("<div style='text-align: center; color: #666;'>www.atendimentoviana.cv</div>", unsafe_allow_html=True)
+st.markdown("<div style='text-align: center;'>www.atendimentoviana.cv</div>", unsafe_allow_html=True)
