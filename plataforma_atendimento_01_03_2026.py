@@ -115,7 +115,7 @@ else:
     st.sidebar.error("❌ Falha na conexão com Supabase")
 
 # HEADER PERSONALIZADO
-st.markdown("<h1 style='text-align: center; color: #1f77b4;'>🧠 ATENDIMENTO VIANA - CONSULTÓRIO DE PSICOLOGIA</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center; color: #1f77b4;'>🧠 PSICARE BY BELINDA VIANA</h1>", unsafe_allow_html=True)
 st.markdown("---")
 
 # MENU PERSONALIZADO
