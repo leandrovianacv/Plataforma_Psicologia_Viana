@@ -7,14 +7,6 @@ import numpy as np
 import warnings
 warnings.filterwarnings('ignore')
 
-# CONFIGURAÇÃO DE CORES PERSONALIZADAS
-COR_PRINCIPAL = "#8B5A2B"  # Marrom terroso
-COR_SECUNDARIA = "#A9714B"  # Marrom médio
-COR_FUNDO = "#F5E6D3"       # Bege claro
-COR_TEXTO = "#5D3A1A"       # Marrom escuro
-COR_BOTAO = "#8B5A2B"       # Marrom terroso
-COR_BOTAO_TEXTO = "#FFFFFF" # Branco
-
 # CORREÇÃO 1: Função para converter numpy.int64
 def converter_numpy_para_python(valor):
     """Converte tipos numpy para tipos Python nativos"""
@@ -27,99 +19,31 @@ def converter_numpy_para_python(valor):
     else:
         return valor
 
-# Configuração da página com CSS personalizado
+# Configuração da página
 st.set_page_config(
-    page_title="Psicóloga Belinda Viana", 
+    page_title="Atendimento Viana - Psicologia", 
     page_icon="🧠",
     layout="wide"
 )
 
-# CSS PERSONALIZADO
-st.markdown(f"""
+# CSS PERSONALIZADO (apenas para cor azul)
+st.markdown("""
 <style>
-    /* Fundo principal */
-    .stApp {{
-        background-color: {COR_FUNDO};
-    }}
-    
-    /* Cabeçalhos */
-    h1, h2, h3 {{
-        color: {COR_PRINCIPAL} !important;
-        font-family: 'Arial', sans-serif;
-    }}
-    
-    /* Texto da sidebar */
-    .css-1d391kg, .css-1lcbmhc {{
-        color: {COR_TEXTO} !important;
-    }}
-    
-    /* Botões */
-    .stButton > button {{
-        background-color: {COR_BOTAO} !important;
-        color: {COR_BOTAO_TEXTO} !important;
-        border-radius: 8px;
-        border: none;
-        padding: 10px 20px;
-        font-weight: bold;
-    }}
-    
-    .stButton > button:hover {{
-        background-color: {COR_SECUNDARIA} !important;
-        color: white !important;
-    }}
-    
-    /* Métricas */
-    .css-1xarl3l {{
-        background-color: white !important;
-        border-radius: 10px;
-        padding: 15px;
-        box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
-    }}
-    
-    /* Sidebar */
-    .css-1d391kg {{
-        background-color: white !important;
-    }}
-    
-    /* Inputs */
-    .stTextInput > div > div > input {{
-        border-radius: 5px;
-        border: 1px solid {COR_SECUNDARIA};
-    }}
-    
-    /* Selectbox */
-    .stSelectbox > div > div {{
-        border-radius: 5px;
-        border: 1px solid {COR_SECUNDARIA};
-    }}
+    /* Cabeçalho principal */
+    h1 {
+        color: #1f77b4 !important;  /* Azul */
+    }
     
     /* Rodapé */
-    .rodape {{
-        background-color: {COR_PRINCIPAL};
-        color: white;
-        padding: 20px;
-        border-radius: 10px;
+    .rodape {
         text-align: center;
-        margin-top: 30px;
-    }}
+        color: #666;
+        padding: 10px;
+        border-top: 1px solid #ddd;
+        margin-top: 20px;
+    }
 </style>
 """, unsafe_allow_html=True)
-
-# Função para validar horário de atendimento
-def validar_horario(data_consulta, hora_consulta):
-    """Valida se o horário está dentro do funcionamento"""
-    # Verificar se é sábado (5) ou domingo (6)
-    if data_consulta.weekday() >= 5:
-        return False, "❌ Não atendemos aos sábados e domingos! ⛔"
-    
-    # Verificar horário (7h às 19h)
-    hora_min = time(7, 0)  # 07:00
-    hora_max = time(19, 0)  # 19:00
-    
-    if hora_consulta < hora_min or hora_consulta > hora_max:
-        return False, "❌ Horário de atendimento: 07:00 às 19:00 ⏰"
-    
-    return True, "✅ Horário disponível!"
 
 # Conexão com Supabase (via Session Pooler) - VERSÃO SEGURA
 def conectar_banco():
@@ -218,39 +142,13 @@ if inicializar_banco():
 else:
     st.sidebar.error("❌ Falha na conexão com Supabase")
 
-# HEADER PERSONALIZADO COM FOTO (OPCIONAL)
-col1, col2, col3 = st.columns([1, 2, 1])
-with col2:
-    st.markdown(f"""
-    <div style='text-align: center; padding: 20px;'>
-        <h1 style='color: {COR_PRINCIPAL}; font-size: 48px;'>🧠 PSICARE</h1>
-        <h2 style='color: {COR_SECUNDARIA};'>BY BELINDA VIANA</h2>
-        <h3 style='color: {COR_TEXTO};'>PSICÓLOGA CLÍNICA</h3>
-    </div>
-    """, unsafe_allow_html=True)
-
+# HEADER PERSONALIZADO (cor azul)
+st.markdown("<h1 style='text-align: center; color: #1f77b4;'>🧠 PSICARE BY BELINDA VIANA</h1>", unsafe_allow_html=True)
+st.markdown("<h3 style='text-align: center; color: #555;'>PSICÓLOGA CLÍNICA</h3>", unsafe_allow_html=True)
 st.markdown("---")
 
-# INFORMAÇÕES DE HORÁRIO NA SIDEBAR
-st.sidebar.markdown("---")
-st.sidebar.markdown(f"### ⏰ Horário de Funcionamento")
-st.sidebar.info(
-    "**Segunda a Sexta:** 07:00 - 19:00\n\n"
-    "**Sábado:** Fechado ❌\n\n"
-    "**Domingo:** Fechado ❌"
-)
-
-# CONTATO NA SIDEBAR
-st.sidebar.markdown("---")
-st.sidebar.markdown(f"### 📞 Contato")
-st.sidebar.info(
-    "📱 +238 594 99 55\n\n"
-    "📧 belindaviana08@gmail.com"
-)
-
 # MENU PERSONALIZADO
-st.sidebar.markdown("---")
-st.sidebar.markdown(f"## 🧭 Navegação")
+st.sidebar.markdown("## 🧭 Navegação")
 menu = st.sidebar.selectbox("Selecione uma opção:", [
     "➕ Cadastrar Paciente", 
     "📅 Marcar Consulta",
@@ -260,9 +158,25 @@ menu = st.sidebar.selectbox("Selecione uma opção:", [
     "📊 Estatísticas"
 ])
 
+# Função para validar horário de atendimento
+def validar_horario(data_consulta, hora_consulta):
+    """Valida se o horário está dentro do funcionamento"""
+    # Verificar se é sábado (5) ou domingo (6)
+    if data_consulta.weekday() >= 5:
+        return False, "❌ Não atendemos aos sábados e domingos!"
+    
+    # Verificar horário (7h às 19h)
+    hora_min = time(7, 0)  # 07:00
+    hora_max = time(19, 0)  # 19:00
+    
+    if hora_consulta < hora_min or hora_consulta > hora_max:
+        return False, "❌ Horário de atendimento: 07:00 às 19:00"
+    
+    return True, "✅ Horário disponível!"
+
 # 1. CADASTRAR PACIENTE
 if menu == "➕ Cadastrar Paciente":
-    st.header(f"👤 Cadastrar Novo Paciente")
+    st.header("👤 Cadastrar Novo Paciente")
     
     with st.form("form_paciente", clear_on_submit=True):
         col1, col2 = st.columns(2)
@@ -270,7 +184,7 @@ if menu == "➕ Cadastrar Paciente":
         with col1:
             nome = st.text_input("Nome Completo*", placeholder="Nome completo do paciente")
             telefone = st.text_input("Telefone*", placeholder="+238 XXX XX XX") 
-            email = st.text_input("Email", placeholder="paciente@email.com")
+            email = st.text_input("Email", placeholder="paciente@email.cv")
             data_nascimento = st.date_input("Data de Nascimento", max_value=date.today())
             
         with col2:
@@ -312,7 +226,7 @@ if menu == "➕ Cadastrar Paciente":
 
 # 2. MARCAR CONSULTA  
 elif menu == "📅 Marcar Consulta":
-    st.header(f"📅 Marcar Nova Consulta")
+    st.header("📅 Marcar Nova Consulta")
     
     try:
         conn = conectar_banco()
@@ -615,18 +529,13 @@ elif menu == "📊 Estatísticas":
         if 'conn' in locals() and conn:
             conn.close()
 
-# RODAPÉ PERSONALIZADO
+# RODAPÉ PERSONALIZADO (como na segunda imagem)
 st.markdown("---")
-st.markdown(f"""
+st.markdown("""
 <div class='rodape'>
-    <div style='font-size: 20px; margin-bottom: 10px;'>🧠 PSICARE BY BELINDA VIANA</div>
-    <div style='font-size: 16px; margin-bottom: 5px;'>PSICÓLOGA CLÍNICA</div>
-    <div style='font-size: 14px; margin-top: 15px;'>
-        📞 +238 594 99 55 | 📧 belindaviana08@gmail.com<br>
-        ⏰ Segunda a Sexta: 07:00 - 19:00 (Fechado Sáb/Dom)
-    </div>
-    <div style='font-size: 12px; margin-top: 15px; color: #F5E6D3;'>
-        © 2025 Psicologia Belinda Viana - Todos os direitos reservados
-    </div>
+    🧠 <b>Atendimento Viana</b> - Consultório de Psicologia | 
+    📞 Contacto: +238 594 99 55 | 
+    📧 Email: belindaviana08@gmail.com | 
+    🌐 www.atendimentoviana.cv
 </div>
 """, unsafe_allow_html=True)
