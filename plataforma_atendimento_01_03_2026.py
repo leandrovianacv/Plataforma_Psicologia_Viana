@@ -19,48 +19,55 @@ def converter_numpy_para_python(valor):
     else:
         return valor
 
-# Configuração da página
+# Configuração da página com imagem como ícone
 st.set_page_config(
-    page_title="Atendimento Viana - Psicologia", 
-    page_icon="🧠",
+    page_title="Belinda Viana - Psicóloga Clínica", 
+    page_icon="🧠",  # Temporário até ter a imagem
     layout="wide"
 )
 
-# CSS PERSONALIZADO - Fundo marrom claro, letras pretas
+# CSS PERSONALIZADO - Fundo branco em todas as áreas
 st.markdown("""
 <style>
-    /* Fundo marrom claro */
+    /* Fundo branco em toda a aplicação */
     .stApp {
-        background-color: #F5E6D3;  /* Marrom claro */
+        background-color: #FFFFFF;
+    }
+    
+    /* Garantir fundo branco em todos os componentes */
+    .stTextInput, .stSelectbox, .stDateInput, .stTimeInput, .stTextArea,
+    .stTextInput > div, .stSelectbox > div, .stDateInput > div, .stTimeInput > div, .stTextArea > div,
+    .stTextInput input, .stSelectbox select, .stDateInput input, .stTimeInput input, .stTextArea textarea {
+        background-color: #FFFFFF !important;
+        color: #000000 !important;
+    }
+    
+    /* Sidebar com fundo branco */
+    .css-1d391kg, [data-testid="stSidebar"] {
+        background-color: #FFFFFF !important;
     }
     
     /* Letras pretas em todo o app */
-    .stApp, p, span, label, div, .stTextInput label, .stSelectbox label {
+    .stApp, p, span, label, div, .stTextInput label, .stSelectbox label,
+    .stDateInput label, .stTimeInput label, .stTextArea label {
         color: #000000 !important;
     }
     
     /* Título principal */
     h1 {
-        color: #8B5A2B !important;  /* Marrom mais escuro para o título */
+        color: #8B5A2B !important;
         text-align: center;
         font-size: 48px !important;
     }
     
     h3 {
         text-align: center;
-        color: #5D3A1A !important;  /* Marrom escuro */
+        color: #8B5A2B !important;
     }
     
     h2 {
         color: #8B5A2B !important;
-        border-bottom: 2px solid #A9714B;
-    }
-    
-    /* Inputs com fundo branco e texto preto */
-    .stTextInput input, .stSelectbox select, .stDateInput input, .stTimeInput input, .stTextArea textarea {
-        background-color: white !important;
-        color: black !important;
-        border: 1px solid #A9714B !important;
+        border-bottom: 2px solid #D2B48C;
     }
     
     /* Botões */
@@ -75,56 +82,46 @@ st.markdown("""
     
     .stButton > button:hover {
         background-color: #A9714B !important;
-        color: white !important;
-    }
-    
-    /* Sidebar com tom mais escuro */
-    .css-1d391kg {
-        background-color: #D2B48C !important;  /* Marrom mais escuro */
-    }
-    
-    /* Texto da sidebar */
-    .css-1d391kg, .css-1lcbmhc, .stSidebar p, .stSidebar span, .stSidebar label {
-        color: black !important;
     }
     
     /* Métricas */
     .css-1xarl3l {
-        background-color: white !important;
+        background-color: #F9F9F9 !important;
         border-radius: 10px;
         padding: 15px;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        border: 1px solid #D2B48C;
     }
     
     /* DataFrames */
     .stDataFrame {
-        background-color: white !important;
+        background-color: #FFFFFF !important;
         border-radius: 5px;
         padding: 10px;
     }
     
-    /* Mensagens de sucesso/erro */
-    .stSuccess, .stError, .stWarning, .stInfo {
-        border-radius: 5px;
-    }
-    
     /* Linha divisória */
     hr {
-        border-color: #A9714B !important;
+        border-color: #D2B48C !important;
     }
     
     /* Rodapé */
     .rodape {
         text-align: center;
-        color: black;
+        color: #000000;
         padding: 15px;
-        background-color: #D2B48C;
+        background-color: #F9F9F9;
         border-radius: 5px;
         margin-top: 20px;
-        border: 1px solid #8B5A2B;
+        border: 1px solid #D2B48C;
     }
 </style>
 """, unsafe_allow_html=True)
+
+# Título com o nome da imagem
+st.markdown("<h1>Belinda Viana</h1>", unsafe_allow_html=True)
+st.markdown("<h3>PSICÓLOGA CLÍNICA</h3>", unsafe_allow_html=True)
+st.markdown("---")
 
 # Conexão com Supabase (via Session Pooler) - VERSÃO SEGURA
 def conectar_banco():
@@ -223,13 +220,8 @@ if inicializar_banco():
 else:
     st.sidebar.error("❌ Falha na conexão com Supabase")
 
-# HEADER PERSONALIZADO
-st.markdown("<h1>🧠 PSICARE BY BELINDA VIANA</h1>", unsafe_allow_html=True)
-st.markdown("<h3>PSICÓLOGA CLÍNICA</h3>", unsafe_allow_html=True)
-st.markdown("---")
-
 # MENU PERSONALIZADO
-st.sidebar.markdown("## 🧭 Navegação")
+st.sidebar.markdown("## Navegação")
 menu = st.sidebar.selectbox("Selecione uma opção:", [
     "➕ Cadastrar Paciente", 
     "📅 Marcar Consulta",
@@ -257,7 +249,7 @@ def validar_horario(data_consulta, hora_consulta):
 
 # 1. CADASTRAR PACIENTE
 if menu == "➕ Cadastrar Paciente":
-    st.header("👤 Cadastrar Novo Paciente")
+    st.header("Cadastrar Novo Paciente")
     
     with st.form("form_paciente", clear_on_submit=True):
         col1, col2 = st.columns(2)
@@ -307,7 +299,7 @@ if menu == "➕ Cadastrar Paciente":
 
 # 2. MARCAR CONSULTA  
 elif menu == "📅 Marcar Consulta":
-    st.header("📅 Marcar Nova Consulta")
+    st.header("Marcar Nova Consulta")
     
     try:
         conn = conectar_banco()
@@ -375,7 +367,7 @@ elif menu == "📅 Marcar Consulta":
 
 # 3. VER PACIENTES
 elif menu == "👥 Ver Pacientes":
-    st.header("👥 Lista de Pacientes")
+    st.header("Lista de Pacientes")
     
     try:
         conn = conectar_banco()
@@ -422,7 +414,7 @@ elif menu == "👥 Ver Pacientes":
 
 # 4. AGENDA DA SEMANA  
 elif menu == "🗓️ Agenda da Semana":
-    st.header("🗓️ Agenda de Consultas")
+    st.header("Agenda de Consultas")
     
     opcao_agenda = st.radio("Visualizar:", ["Dia Específico", "Próximos 7 Dias"], horizontal=True)
     
@@ -466,11 +458,11 @@ elif menu == "🗓️ Agenda da Semana":
                         st.write(f"📝 {row['tipo']}")
                     with col3:
                         status_color = {
-                            'agendada': 'blue',
-                            'realizada': 'green', 
-                            'cancelada': 'red',
-                            'falta': 'orange'
-                        }.get(row['status'], 'gray')
+                            'agendada': '#1f77b4',
+                            'realizada': '#2ecc71', 
+                            'cancelada': '#e74c3c',
+                            'falta': '#e67e22'
+                        }.get(row['status'], '#95a5a6')
                         st.markdown(f"**Status:** <span style='color:{status_color}'>{row['status'].title()}</span>", 
                                   unsafe_allow_html=True)
                     with col4:
@@ -492,7 +484,7 @@ elif menu == "🗓️ Agenda da Semana":
 
 # 5. REGISTRAR CONSULTA REALIZADA
 elif menu == "✅ Registrar Consulta Realizada":
-    st.header("✅ Registrar Consulta Realizada")
+    st.header("Registrar Consulta Realizada")
     
     try:
         conn = conectar_banco()
@@ -514,7 +506,7 @@ elif menu == "✅ Registrar Consulta Realizada":
             
             col1, col2 = st.columns(2)
             with col1:
-                if st.button("✅ Marcar como Realizada", type="primary"):
+                if st.button("✅ Marcar como Realizada"):
                     consulta_id = consultas_df[consultas_df['display'] == consulta_selecionada].iloc[0]['id']
                     consulta_id = converter_numpy_para_python(consulta_id)
                     
@@ -545,7 +537,7 @@ elif menu == "✅ Registrar Consulta Realizada":
 
 # 6. ESTATÍSTICAS
 elif menu == "📊 Estatísticas":
-    st.header("📊 Estatísticas do Consultório")
+    st.header("Estatísticas do Consultório")
     
     try:
         conn = conectar_banco()
@@ -590,7 +582,7 @@ elif menu == "📊 Estatísticas":
             taxa_valor = converter_numpy_para_python(taxa_falta.iloc[0]['taxa']) if not pd.isna(taxa_falta.iloc[0]['taxa']) else 0
             st.metric("Taxa de Faltas (%)", f"{taxa_valor}")
         
-        st.subheader("📊 Consultas por Status (Este Mês)")
+        st.subheader("Consultas por Status (Este Mês)")
         status_df = pd.read_sql("""
             SELECT status, COUNT(*) as quantidade
             FROM consultas
@@ -614,9 +606,8 @@ elif menu == "📊 Estatísticas":
 st.markdown("---")
 st.markdown("""
 <div class='rodape'>
-    🧠 <b>Atendimento Viana</b> - Consultório de Psicologia | 
+    🧠 <b>Belinda Viana</b> - Psicóloga Clínica | 
     📞 Contacto: +238 594 99 55 | 
-    📧 Email: belindaviana08@gmail.com | 
-    🌐 www.atendimentoviana.cv
+    📧 Email: belindaviana08@gmail.com
 </div>
 """, unsafe_allow_html=True)
