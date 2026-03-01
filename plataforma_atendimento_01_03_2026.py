@@ -26,32 +26,102 @@ st.set_page_config(
     layout="wide"
 )
 
-# CSS básico para manter a consistência
+# CSS PERSONALIZADO - Fundo marrom claro, letras pretas
 st.markdown("""
 <style>
-    /* Fundo branco e texto preto */
+    /* Fundo marrom claro */
     .stApp {
-        background-color: white;
+        background-color: #F5E6D3;  /* Marrom claro */
+    }
+    
+    /* Letras pretas em todo o app */
+    .stApp, p, span, label, div, .stTextInput label, .stSelectbox label {
+        color: #000000 !important;
     }
     
     /* Título principal */
     h1 {
-        color: #1f77b4 !important;  /* Azul suave para o título */
+        color: #8B5A2B !important;  /* Marrom mais escuro para o título */
         text-align: center;
+        font-size: 48px !important;
     }
     
     h3 {
         text-align: center;
-        color: #555 !important;
+        color: #5D3A1A !important;  /* Marrom escuro */
+    }
+    
+    h2 {
+        color: #8B5A2B !important;
+        border-bottom: 2px solid #A9714B;
+    }
+    
+    /* Inputs com fundo branco e texto preto */
+    .stTextInput input, .stSelectbox select, .stDateInput input, .stTimeInput input, .stTextArea textarea {
+        background-color: white !important;
+        color: black !important;
+        border: 1px solid #A9714B !important;
+    }
+    
+    /* Botões */
+    .stButton > button {
+        background-color: #8B5A2B !important;
+        color: white !important;
+        border: none;
+        border-radius: 5px;
+        padding: 10px 20px;
+        font-weight: bold;
+    }
+    
+    .stButton > button:hover {
+        background-color: #A9714B !important;
+        color: white !important;
+    }
+    
+    /* Sidebar com tom mais escuro */
+    .css-1d391kg {
+        background-color: #D2B48C !important;  /* Marrom mais escuro */
+    }
+    
+    /* Texto da sidebar */
+    .css-1d391kg, .css-1lcbmhc, .stSidebar p, .stSidebar span, .stSidebar label {
+        color: black !important;
+    }
+    
+    /* Métricas */
+    .css-1xarl3l {
+        background-color: white !important;
+        border-radius: 10px;
+        padding: 15px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    
+    /* DataFrames */
+    .stDataFrame {
+        background-color: white !important;
+        border-radius: 5px;
+        padding: 10px;
+    }
+    
+    /* Mensagens de sucesso/erro */
+    .stSuccess, .stError, .stWarning, .stInfo {
+        border-radius: 5px;
+    }
+    
+    /* Linha divisória */
+    hr {
+        border-color: #A9714B !important;
     }
     
     /* Rodapé */
     .rodape {
         text-align: center;
-        color: #666;
-        padding: 10px;
-        border-top: 1px solid #ddd;
+        color: black;
+        padding: 15px;
+        background-color: #D2B48C;
+        border-radius: 5px;
         margin-top: 20px;
+        border: 1px solid #8B5A2B;
     }
 </style>
 """, unsafe_allow_html=True)
