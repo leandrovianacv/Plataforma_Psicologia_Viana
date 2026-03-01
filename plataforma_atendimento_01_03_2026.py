@@ -26,21 +26,107 @@ st.set_page_config(
     layout="wide"
 )
 
-# CSS PERSONALIZADO (apenas para cor azul)
+# CSS PERSONALIZADO (fundo azul e cabeçalho adaptado)
 st.markdown("""
 <style>
-    /* Cabeçalho principal */
+    /* Fundo azul para toda a aplicação */
+    .stApp {
+        background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+    }
+    
+    /* Ajuste para o fundo dos componentes */
+    .stApp > div {
+        background-color: transparent;
+    }
+    
+    /* Cards e containers com fundo semi-transparente */
+    .stTextInput, .stSelectbox, .stDateInput, .stTimeInput, .stTextArea {
+        background-color: rgba(255, 255, 255, 0.9);
+        border-radius: 8px;
+        padding: 5px;
+    }
+    
+    /* Título principal adaptado ao fundo azul */
     h1 {
-        color: #1f77b4 !important;  /* Azul */
+        color: white !important;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        font-size: 48px !important;
+        padding: 20px;
+        background: rgba(0,0,0,0.2);
+        border-radius: 10px;
+        display: inline-block;
+        width: 100%;
+    }
+    
+    /* Subtítulo */
+    h3 {
+        color: #FFD700 !important;  /* Dourado para contraste */
+        text-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+    }
+    
+    /* Headers das seções */
+    h2 {
+        color: white !important;
+        border-bottom: 2px solid #FFD700;
+        padding-bottom: 10px;
+    }
+    
+    /* Sidebar com fundo mais escuro */
+    .css-1d391kg {
+        background: linear-gradient(135deg, #0f2027 0%, #203a43 100%) !important;
+    }
+    
+    /* Texto da sidebar */
+    .css-1d391kg, .css-1lcbmhc {
+        color: white !important;
+    }
+    
+    /* Botões */
+    .stButton > button {
+        background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%) !important;
+        color: #1e3c72 !important;
+        font-weight: bold;
+        border: none;
+        border-radius: 8px;
+        padding: 10px 20px;
+        transition: all 0.3s;
+    }
+    
+    .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+    }
+    
+    /* Métricas */
+    .css-1xarl3l {
+        background: rgba(255, 255, 255, 0.9) !important;
+        border-radius: 10px;
+        padding: 15px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    
+    /* DataFrames */
+    .stDataFrame {
+        background: rgba(255, 255, 255, 0.9);
+        border-radius: 10px;
+        padding: 10px;
+    }
+    
+    /* Mensagens de sucesso/erro */
+    .stSuccess, .stError, .stWarning, .stInfo {
+        border-radius: 8px;
+        border-left: 5px solid;
     }
     
     /* Rodapé */
     .rodape {
         text-align: center;
-        color: #666;
-        padding: 10px;
-        border-top: 1px solid #ddd;
-        margin-top: 20px;
+        color: white;
+        padding: 20px;
+        background: rgba(0,0,0,0.3);
+        border-radius: 10px;
+        margin-top: 30px;
+        border: 1px solid rgba(255,255,255,0.1);
     }
 </style>
 """, unsafe_allow_html=True)
@@ -142,9 +228,9 @@ if inicializar_banco():
 else:
     st.sidebar.error("❌ Falha na conexão com Supabase")
 
-# HEADER PERSONALIZADO (cor azul)
-st.markdown("<h1 style='text-align: center; color: #1f77b4;'>🧠 PSICARE BY BELINDA VIANA</h1>", unsafe_allow_html=True)
-st.markdown("<h3 style='text-align: center; color: #555;'>PSICÓLOGA CLÍNICA</h3>", unsafe_allow_html=True)
+# HEADER PERSONALIZADO (adaptado ao fundo azul)
+st.markdown("<h1 style='text-align: center;'>🧠 PSICARE BY BELINDA VIANA</h1>", unsafe_allow_html=True)
+st.markdown("<h3 style='text-align: center;'>PSICÓLOGA CLÍNICA</h3>", unsafe_allow_html=True)
 st.markdown("---")
 
 # MENU PERSONALIZADO
@@ -160,17 +246,20 @@ menu = st.sidebar.selectbox("Selecione uma opção:", [
 
 # Função para validar horário de atendimento
 def validar_horario(data_consulta, hora_consulta):
-    """Valida se o horário está dentro do funcionamento"""
+    """Valida se o horário está dentro do funcionamento (Segunda a Sexta, 7h-19h)"""
     # Verificar se é sábado (5) ou domingo (6)
-    if data_consulta.weekday() >= 5:
-        return False, "❌ Não atendemos aos sábados e domingos!"
+    dias_semana = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
+    dia_semana = data_consulta.weekday()
+    
+    if dia_semana >= 5:  # 5 = Sábado, 6 = Domingo
+        return False, f"❌ Não atendemos aos {dias_semana[dia_semana]}! Atendimento: Segunda a Sexta"
     
     # Verificar horário (7h às 19h)
     hora_min = time(7, 0)  # 07:00
     hora_max = time(19, 0)  # 19:00
     
     if hora_consulta < hora_min or hora_consulta > hora_max:
-        return False, "❌ Horário de atendimento: 07:00 às 19:00"
+        return False, "❌ Horário de atendimento: 07:00 às 19:00 (Segunda a Sexta)"
     
     return True, "✅ Horário disponível!"
 
@@ -251,6 +340,8 @@ elif menu == "📅 Marcar Consulta":
                     horario_valido, mensagem = validar_horario(data_consulta, hora_consulta)
                     if not horario_valido:
                         st.warning(mensagem)
+                    else:
+                        st.success(mensagem)
                 
                 with col2: 
                     primeira_consulta = st.checkbox("Primeira Consulta", value=True)
@@ -529,7 +620,7 @@ elif menu == "📊 Estatísticas":
         if 'conn' in locals() and conn:
             conn.close()
 
-# RODAPÉ PERSONALIZADO (como na segunda imagem)
+# RODAPÉ PERSONALIZADO
 st.markdown("---")
 st.markdown("""
 <div class='rodape'>
