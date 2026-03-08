@@ -193,7 +193,7 @@ if menu == "➕ Cadastrar Paciente":
             else:
                 st.error("❌ Preencha os campos obrigatórios: Nome Completo e Telefone")
 
-# 2. MARCAR CONSULTA - COM AJUSTE NO FILTRO DE DATA/HORA
+# 2. MARCAR CONSULTA - CORREÇÃO DA LÓGICA DE DATA/HORA
 elif menu == "📅 Marcar Consulta":
     st.header("📅 Marcar Nova Consulta")
     
@@ -224,7 +224,6 @@ elif menu == "📅 Marcar Consulta":
                             todos_horarios.append(time(hora, minuto))
                     
                     # 2. Determinar horários permitidos baseados na data selecionada
-                    # Ajuste para UTC-1 (Cabo Verde)
                     agora_utc = datetime.utcnow()
                     agora_cv = agora_utc - timedelta(hours=1)
                     hoje_cv = agora_cv.date()
@@ -232,12 +231,12 @@ elif menu == "📅 Marcar Consulta":
 
                     horarios_permitidos = []
                     
-                    # Se for HOJE, filtra apenas horários futuros
+                    # Se a data selecionada for HOJE, filtra apenas horários futuros
                     if data_consulta == hoje_cv:
                         for h in todos_horarios:
                             if h > hora_cv:
                                 horarios_permitidos.append(h)
-                    # Se for qualquer outro dia, permite todos os horários da grade
+                    # Se for AMANHÃ ou qualquer dia futuro, permite TODOS os horários da grade
                     else:
                         horarios_permitidos = todos_horarios
 
@@ -260,7 +259,7 @@ elif menu == "📅 Marcar Consulta":
                             format_func=lambda x: x.strftime('%H:%M')
                         )
                     else:
-                        st.error("❌ Não há horários disponíveis para esta data/momento!")
+                        st.error("❌ Não há horários disponíveis para esta data!")
                         hora_consulta = None
                 
                 with col2:
@@ -281,7 +280,6 @@ elif menu == "📅 Marcar Consulta":
                     else:
                         data_hora = datetime.combine(data_consulta, hora_consulta)
                         
-                        # Verificação final de segurança
                         cur.execute(
                             "SELECT id FROM consultas WHERE data_consulta = %s AND status IN ('agendada', 'realizada')",
                             (data_hora,)
@@ -341,7 +339,6 @@ elif menu == "👥 Ver Pacientes":
             with col1:
                 st.metric("Total de Pacientes", len(pacientes_df))
             with col2:
-                # Usando data CV para consistência
                 hoje_cv = (datetime.utcnow() - timedelta(hours=1)).date()
                 primeiro_dia_mes = hoje_cv.replace(day=1)
                 cadastros_mes = 0
