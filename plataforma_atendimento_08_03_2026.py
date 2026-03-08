@@ -26,9 +26,8 @@ st.set_page_config(
     layout="wide"
 )
 
-# Conexão com Supabase (via Session Pooler)
+# Conexão com Supabase
 def conectar_banco():
-    """Conecta ao Supabase usando Session Pooler"""
     try:
         if "DB_URL" in st.secrets:
             db_url = st.secrets["DB_URL"]
@@ -58,15 +57,14 @@ def conectar_banco():
                         password=password
                     )
             else:
-                st.error("❌ DB_URL não configurada! Use secrets ou variável de ambiente.")
+                st.error("❌ DB_URL não configurada!")
                 return None
     except Exception as e:
         st.error(f"Erro ao conectar: {e}")
         return None
 
-# Inicializar banco
+
 def inicializar_banco():
-    """Garante que as tabelas necessárias existam"""
     try:
         conn = conectar_banco()
         if conn is None:
@@ -113,17 +111,16 @@ def inicializar_banco():
         st.error(f"Erro ao inicializar banco: {e}")
         return False
 
-# Executar inicialização
+
 if inicializar_banco():
     st.sidebar.success("✅ Conectado ao Supabase")
 else:
     st.sidebar.error("❌ Falha na conexão com Supabase")
 
-# HEADER PERSONALIZADO
+
 st.markdown("<h1 style='text-align: center; color: #1f77b4;'>🧠 PSICARE BY BELINDA VIANA</h1>", unsafe_allow_html=True)
 st.markdown("---")
 
-# MENU PERSONALIZADO
 st.sidebar.markdown("## 🧭 Navegação")
 menu = st.sidebar.selectbox("Selecione uma opção:", [
     "➕ Cadastrar Paciente", 
@@ -134,169 +131,174 @@ menu = st.sidebar.selectbox("Selecione uma opção:", [
     "📊 Estatísticas"
 ])
 
-# 1. CADASTRAR PACIENTE
-if menu == "➕ Cadastrar Paciente":
-    st.header("👤 Cadastrar Novo Paciente")
-    
-    with st.form("form_paciente", clear_on_submit=True):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            nome = st.text_input("Nome Completo*", placeholder="Nome completo do paciente")
-            telefone = st.text_input("Telefone*", placeholder="+238 XXX XX XX") 
-            email = st.text_input("Email", placeholder="paciente@email.cv")
-            
-            # Data de nascimento desde 1930
-            data_nascimento = st.date_input(
-                "Data de Nascimento", 
-                min_value=date(1930, 1, 1),
-                max_value=date.today(),
-                value=None,
-                format="DD/MM/YYYY"
-            )
-            
-        with col2:
-            profissao = st.text_input("Profissão", placeholder="Profissão atual")
-            como_chegou = st.selectbox("Como chegou até nós", 
-                                     ["Indicação", "Internet", "Redes Sociais", "Outro"])
-            queixa_principal = st.text_area("Queixa Principal", 
-                                          placeholder="Descreva a queixa principal (opcional)...", 
-                                          height=100)
-        
-        medicacoes = st.text_input("Medicações Atuais", placeholder="Medicações em uso")
-        observacoes = st.text_area("Observações Iniciais", 
-                                 placeholder="Observações relevantes...",
-                                 height=80)
-        
-        st.caption("* Campos obrigatórios: Nome Completo e Telefone")
-        
-        if st.form_submit_button("💾 Salvar Paciente"):
-            if nome and telefone:
-                try:
-                    conn = conectar_banco()
-                    cur = conn.cursor()
-                    cur.execute(
-                        """INSERT INTO pacientes 
-                        (nome_completo, telefone, email, data_nascimento, profissao, 
-                         como_chegou, queixa_principal, medicacoes_atuais, observacoes_iniciais) 
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-                        (nome, telefone, email, data_nascimento, profissao, como_chegou, 
-                         queixa_principal, medicacoes, observacoes)
-                    )
-                    conn.commit()
-                    st.success("✅ Paciente cadastrado com sucesso!")
-                    st.balloons()
-                except Exception as e:
-                    st.error(f"❌ Erro ao salvar: {e}")
-                finally:
-                    if conn:
-                        conn.close()
-            else:
-                st.error("❌ Preencha os campos obrigatórios: Nome Completo e Telefone")
+# ==============================
+# MARCAR CONSULTA
+# ==============================
 
-# 2. MARCAR CONSULTA - SEM NENHUM FILTRO DE HORÁRIO
 elif menu == "📅 Marcar Consulta":
+
     st.header("📅 Marcar Nova Consulta")
     
     try:
         conn = conectar_banco()
-        if conn is None:
-            st.error("❌ Não foi possível conectar ao banco de dados")
-            st.stop()
             
-        pacientes_df = pd.read_sql("SELECT id, nome_completo FROM pacientes WHERE ativo = TRUE ORDER BY nome_completo", conn)
+        pacientes_df = pd.read_sql(
+            "SELECT id, nome_completo FROM pacientes WHERE ativo = TRUE ORDER BY nome_completo",
+            conn
+        )
         
         if pacientes_df.empty:
             st.warning("⚠️ Cadastre pacientes primeiro!")
         else:
+
             with st.form("form_consulta", clear_on_submit=True):
+
                 col1, col2 = st.columns(2)
-                
+
                 with col1:
+
                     paciente_nome = st.selectbox("Paciente*", pacientes_df['nome_completo'])
-                    data_consulta = st.date_input("Data*", min_value=date.today())
-                    
-                    # GERAR TODOS OS HORÁRIOS POSSÍVEIS (8h às 20h)
+
+                    data_consulta = st.date_input(
+                        "Data*", 
+                        min_value=date.today()
+                    )
+
                     todos_horarios = []
-                    for hora in range(8, 21):
-                        for minuto in [0, 30]:
+
+                    for hora in range(8,21):
+                        for minuto in [0,30]:
+
                             if hora == 20 and minuto > 0:
                                 continue
-                            todos_horarios.append(time(hora, minuto))
-                    
-                    # REMOVER APENAS HORÁRIOS JÁ OCUPADOS
+
+                            todos_horarios.append(time(hora,minuto))
+
                     horarios_livres = []
+
                     for horario in todos_horarios:
+
                         data_hora = datetime.combine(data_consulta, horario)
+
+                        # FILTRO PARA NÃO MARCAR HORÁRIOS NO PASSADO (HOJE)
+                        agora = datetime.now()
+
+                        if data_consulta == date.today():
+                            if data_hora <= agora:
+                                continue
+
                         cur = conn.cursor()
+
                         cur.execute(
-                            "SELECT id FROM consultas WHERE data_consulta = %s AND status IN ('agendada', 'realizada')",
+                            """
+                            SELECT id 
+                            FROM consultas 
+                            WHERE data_consulta = %s 
+                            AND status IN ('agendada','realizada')
+                            """,
                             (data_hora,)
                         )
+
                         if cur.fetchone() is None:
                             horarios_livres.append(horario)
-                    
-                    # MOSTRAR SELECTBOX COM TODOS OS HORÁRIOS
+
                     if horarios_livres:
+
                         hora_consulta = st.selectbox(
-                            "Horário*", 
+                            "Horário*",
                             horarios_livres,
                             format_func=lambda x: x.strftime('%H:%M')
                         )
+
                     else:
-                        st.error("❌ Não há horários disponíveis para esta data!")
-                        hora_consulta = None
-                
+                        st.error("❌ Não há horários disponíveis")
+                        hora_consulta=None
+
                 with col2:
-                    primeira_consulta = st.checkbox("Primeira Consulta", value=True)
-                    valor_consulta = st.number_input("Valor da Consulta (CVE)", 
-                                                   min_value=0.0, 
-                                                   value=2500.0 if primeira_consulta else 2000.0,
-                                                   step=100.0,
-                                                   format="%.0f")
-                    forma_pagamento = st.selectbox("Forma de Pagamento", 
-                                                 ["Dinheiro", "Transferência", "MB Way", "Cartão", "Outro"])
-                
+
+                    primeira_consulta = st.checkbox("Primeira Consulta",value=True)
+
+                    valor_consulta = st.number_input(
+                        "Valor da Consulta (CVE)",
+                        min_value=0.0,
+                        value=2500.0 if primeira_consulta else 2000.0,
+                        step=100.0
+                    )
+
+                    forma_pagamento = st.selectbox(
+                        "Forma de Pagamento",
+                        ["Dinheiro","Transferência","MB Way","Cartão","Outro"]
+                    )
+
                 observacoes = st.text_area("Observações Técnicas")
-                
+
                 if st.form_submit_button("📅 Agendar Consulta"):
+
                     if hora_consulta is None:
-                        st.error("❌ Selecione um horário válido!")
+
+                        st.error("❌ Selecione um horário válido")
+
                     else:
-                        data_hora = datetime.combine(data_consulta, hora_consulta)
-                        
-                        # Verificar se horário está ocupado (segurança)
+
+                        data_hora = datetime.combine(data_consulta,hora_consulta)
+
                         cur.execute(
-                            "SELECT id FROM consultas WHERE data_consulta = %s AND status IN ('agendada', 'realizada')",
+                            """
+                            SELECT id 
+                            FROM consultas 
+                            WHERE data_consulta=%s 
+                            AND status IN ('agendada','realizada')
+                            """,
                             (data_hora,)
                         )
-                        
-                        if cur.fetchone() is not None:
-                            st.error("❌ Este horário já está ocupado! Escolha outro.")
-                            st.stop()
-                        
-                        # Inserir consulta
-                        paciente_row = pacientes_df[pacientes_df['nome_completo'] == paciente_nome].iloc[0]
-                        paciente_id = converter_numpy_para_python(paciente_row['id'])
-                        
-                        cur.execute(
-                            """INSERT INTO consultas 
-                            (paciente_id, data_consulta, primeira_consulta, valor_consulta, 
-                             forma_pagamento, observacoes_tecnicas) 
-                            VALUES (%s, %s, %s, %s, %s, %s)""",
-                            (paciente_id, data_hora, primeira_consulta, valor_consulta, 
-                             forma_pagamento, observacoes)
-                        )
-                        conn.commit()
-                        st.success(f"✅ Consulta marcada para {data_consulta.strftime('%d/%m/%Y')} às {hora_consulta.strftime('%H:%M')}")
-                        st.balloons()
-                    
-    except Exception as e:
-        st.error(f"❌ Erro: {e}")
-    finally:
-        if 'conn' in locals() and conn:
-            conn.close()
 
+                        if cur.fetchone():
+
+                            st.error("❌ Este horário já está ocupado")
+
+                        else:
+
+                            paciente_row = pacientes_df[
+                                pacientes_df['nome_completo']==paciente_nome
+                            ].iloc[0]
+
+                            paciente_id = converter_numpy_para_python(
+                                paciente_row['id']
+                            )
+
+                            cur.execute(
+                                """
+                                INSERT INTO consultas
+                                (paciente_id,data_consulta,primeira_consulta,
+                                valor_consulta,forma_pagamento,observacoes_tecnicas)
+                                VALUES (%s,%s,%s,%s,%s,%s)
+                                """,
+                                (
+                                    paciente_id,
+                                    data_hora,
+                                    primeira_consulta,
+                                    valor_consulta,
+                                    forma_pagamento,
+                                    observacoes
+                                )
+                            )
+
+                            conn.commit()
+
+                            st.success(
+                                f"✅ Consulta marcada para "
+                                f"{data_consulta.strftime('%d/%m/%Y')} "
+                                f"às {hora_consulta.strftime('%H:%M')}"
+                            )
+
+                            st.balloons()
+
+    except Exception as e:
+        st.error(f"Erro: {e}")
+
+    finally:
+        if conn:
+            conn.close()
 # 3. VER PACIENTES
 elif menu == "👥 Ver Pacientes":
     st.header("👥 Lista de Pacientes")
