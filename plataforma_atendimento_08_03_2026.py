@@ -94,7 +94,7 @@ def inicializar_banco():
             );
         """)
         
-        # Tabela consultas
+        # Tabela consultas - ADICIONADO CAMPOS PARA PACOTE
         cur.execute("""
             CREATE TABLE IF NOT EXISTS consultas (
                 id SERIAL PRIMARY KEY,
@@ -102,29 +102,12 @@ def inicializar_banco():
                 data_consulta TIMESTAMP NOT NULL,
                 primeira_consulta BOOLEAN DEFAULT TRUE,
                 valor_consulta DECIMAL(10,2) DEFAULT 0,
-                tipo_pacote VARCHAR(20),
-                secoes_pacote INTEGER,
-                secoes_utilizadas INTEGER DEFAULT 0,
+                tipo_consulta VARCHAR(20) DEFAULT 'normal',  -- 'normal', 'pacote_4', 'pacote_8'
                 status VARCHAR(20) DEFAULT 'agendada',
                 observacoes_tecnicas TEXT,
                 pagamento_realizado BOOLEAN DEFAULT FALSE,
                 forma_pagamento VARCHAR(50),
                 data_criacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        """)
-        
-        # Tabela pacotes (para controle de pacotes comprados)
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS pacotes (
-                id SERIAL PRIMARY KEY,
-                paciente_id INTEGER REFERENCES pacientes(id),
-                tipo_pacote VARCHAR(20) NOT NULL,
-                total_secoes INTEGER NOT NULL,
-                secoes_utilizadas INTEGER DEFAULT 0,
-                valor_total DECIMAL(10,2) NOT NULL,
-                data_compra TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                ativo BOOLEAN DEFAULT TRUE,
-                observacoes TEXT
             );
         """)
         
@@ -150,7 +133,6 @@ st.sidebar.markdown("## 🧭 Navegação")
 menu = st.sidebar.selectbox("Selecione uma opção:", [
     "➕ Cadastrar Paciente", 
     "📅 Marcar Consulta",
-    "📦 Gerenciar Pacotes",
     "👥 Ver Pacientes", 
     "🗓️ Agenda da Semana",
     "✅ Registrar Consulta Realizada",
@@ -215,7 +197,7 @@ if menu == "➕ Cadastrar Paciente":
             else:
                 st.error("❌ Preencha os campos obrigatórios (*)")
 
-# 2. MARCAR CONSULTA - COM OPÇÃO DE PACOTE
+# 2. MARCAR CONSULTA - COM OPÇÃO DE PACOTE DIRETO NO FORMULÁRIO
 elif menu == "📅 Marcar Consulta":
     st.header("📅 Marcar Nova Consulta")
     
@@ -241,47 +223,32 @@ elif menu == "📅 Marcar Consulta":
                 with col2: 
                     primeira_consulta = st.checkbox("Primeira Consulta", value=True)
                     
-                    # Opção de pacote
-                    usar_pacote = st.checkbox("Usar pacote de consultas")
+                    # OPÇÃO DE TIPO DE CONSULTA: Normal ou Pacotes
+                    tipo_consulta = st.radio(
+                        "Tipo de Consulta",
+                        ["Normal", "Pacote 4 seções (1.750€ cada)", "Pacote 8 seções (1.500€ cada)"],
+                        horizontal=True
+                    )
                     
-                    if usar_pacote:
-                        # Verificar pacotes ativos do paciente
-                        paciente_row = pacientes_df[pacientes_df['nome_completo'] == paciente_nome].iloc[0]
-                        paciente_id = converter_numpy_para_python(paciente_row['id'])
-                        
-                        pacotes_df = pd.read_sql("""
-                            SELECT id, tipo_pacote, total_secoes, secoes_utilizadas, 
-                                   (total_secoes - secoes_utilizadas) as secoes_restantes
-                            FROM pacotes 
-                            WHERE paciente_id = %s AND ativo = TRUE 
-                              AND secoes_utilizadas < total_secoes
-                        """, conn, params=(paciente_id,))
-                        
-                        if not pacotes_df.empty:
-                            pacotes_df['display'] = pacotes_df.apply(
-                                lambda x: f"Pacote {x['tipo_pacote']} - {x['secoes_restantes']} sessões restantes", 
-                                axis=1
-                            )
-                            pacote_selecionado = st.selectbox("Selecionar Pacote", pacotes_df['display'])
-                            
-                            # Valor será zero pois já foi pago no pacote
-                            valor_consulta = 0.0
-                            st.info("💰 Esta consulta será debitada do pacote (sem custo adicional)")
-                        else:
-                            st.warning("⚠️ Nenhum pacote ativo disponível para este paciente")
-                            usar_pacote = False
-                            valor_consulta = st.number_input("Valor da Consulta (CVE)", 
-                                                           min_value=0.0, 
-                                                           value=2500.0 if primeira_consulta else 2000.0,
-                                                           step=100.0)
-                    else:
+                    # Definir valor baseado no tipo de consulta
+                    if tipo_consulta == "Normal":
                         valor_consulta = st.number_input("Valor da Consulta (CVE)", 
                                                        min_value=0.0, 
                                                        value=2500.0 if primeira_consulta else 2000.0,
-                                                       step=100.0)
+                                                       step=100.0,
+                                                       help="Valor para consulta avulsa")
+                        tipo_consulta_db = "normal"
+                    elif tipo_consulta == "Pacote 4 seções (1.750€ cada)":
+                        valor_consulta = 1750.0
+                        st.info(f"💰 Valor por sessão: 1.750 CVE (Total do pacote: 7.000 CVE)")
+                        tipo_consulta_db = "pacote_4"
+                    else:  # Pacote 8 seções
+                        valor_consulta = 1500.0
+                        st.info(f"💰 Valor por sessão: 1.500 CVE (Total do pacote: 12.000 CVE)")
+                        tipo_consulta_db = "pacote_8"
                     
                     forma_pagamento = st.selectbox("Forma de Pagamento", 
-                                                 ["Dinheiro", "Transferência", "MB Way", "Outro", "Pacote"])
+                                                 ["Dinheiro", "Transferência", "MB Way", "Outro"])
                 
                 observacoes = st.text_area("Observações Técnicas")
                 
@@ -293,43 +260,19 @@ elif menu == "📅 Marcar Consulta":
                     
                     cur = conn.cursor()
                     
-                    if usar_pacote and 'pacote_selecionado' in locals():
-                        # Encontrar o pacote selecionado
-                        pacote_info = pacotes_df[pacotes_df['display'] == pacote_selecionado].iloc[0]
-                        pacote_id = converter_numpy_para_python(pacote_info['id'])
-                        
-                        # Inserir consulta vinculada ao pacote
-                        cur.execute(
-                            """INSERT INTO consultas 
-                            (paciente_id, data_consulta, primeira_consulta, valor_consulta, 
-                             tipo_pacote, secoes_pacote, forma_pagamento, observacoes_tecnicas, pagamento_realizado) 
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-                            (paciente_id, data_hora, primeira_consulta, 0.0, 
-                             pacote_info['tipo_pacote'], pacote_info['secoes_restantes'], 
-                             "Pacote", observacoes, True)
-                        )
-                        
-                        # Atualizar pacote
-                        cur.execute("""
-                            UPDATE pacotes 
-                            SET secoes_utilizadas = secoes_utilizadas + 1
-                            WHERE id = %s
-                        """, (pacote_id,))
-                        
-                        st.success(f"✅ Consulta agendada usando pacote para {data_consulta.strftime('%d/%m/%Y')} às {hora_consulta.strftime('%H:%M')}")
-                    else:
-                        # Consulta normal
-                        cur.execute(
-                            """INSERT INTO consultas 
-                            (paciente_id, data_consulta, primeira_consulta, valor_consulta, 
-                             forma_pagamento, observacoes_tecnicas) 
-                            VALUES (%s, %s, %s, %s, %s, %s)""",
-                            (paciente_id, data_hora, primeira_consulta, valor_consulta, 
-                             forma_pagamento, observacoes)
-                        )
-                        st.success(f"✅ Consulta marcada para {data_consulta.strftime('%d/%m/%Y')} às {hora_consulta.strftime('%H:%M')}")
-                    
+                    # Inserir consulta com tipo_consulta
+                    cur.execute(
+                        """INSERT INTO consultas 
+                        (paciente_id, data_consulta, primeira_consulta, valor_consulta, 
+                         tipo_consulta, forma_pagamento, observacoes_tecnicas) 
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                        (paciente_id, data_hora, primeira_consulta, valor_consulta, 
+                         tipo_consulta_db, forma_pagamento, observacoes)
+                    )
                     conn.commit()
+                    
+                    mensagem_tipo = "consulta normal" if tipo_consulta_db == "normal" else f"consulta de {tipo_consulta}"
+                    st.success(f"✅ {mensagem_tipo.title()} marcada para {data_consulta.strftime('%d/%m/%Y')} às {hora_consulta.strftime('%H:%M')}")
                     
     except Exception as e:
         st.error(f"❌ Erro: {e}")
@@ -337,124 +280,7 @@ elif menu == "📅 Marcar Consulta":
         if 'conn' in locals() and conn:
             conn.close()
 
-# 3. GERENCIAR PACOTES
-elif menu == "📦 Gerenciar Pacotes":
-    st.header("📦 Gerenciar Pacotes de Consultas")
-    
-    # Preços dos pacotes
-    PRECO_PACOTE_4 = 1750 * 4  # 7000 CVE
-    PRECO_PACOTE_8 = 1500 * 8  # 12000 CVE
-    
-    st.info(f"""
-    ### 💰 Tabela de Pacotes:
-    - **Pacote 4 seções:** 1.750 CVE por seção → Total: **{PRECO_PACOTE_4:,.0f} CVE**
-    - **Pacote 8 seções:** 1.500 CVE por seção → Total: **{PRECO_PACOTE_8:,.0f} CVE**
-    """)
-    
-    opcao_pacote = st.radio("Opção:", ["Comprar Novo Pacote", "Ver Pacotes Ativos"], horizontal=True)
-    
-    try:
-        conn = conectar_banco()
-        if conn is None:
-            st.error("❌ Não foi possível conectar ao banco de dados")
-            st.stop()
-        
-        if opcao_pacote == "Comprar Novo Pacote":
-            pacientes_df = pd.read_sql("SELECT id, nome_completo FROM pacientes WHERE ativo = TRUE", conn)
-            
-            if pacientes_df.empty:
-                st.warning("⚠️ Cadastre pacientes primeiro!")
-            else:
-                with st.form("form_pacote", clear_on_submit=True):
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        paciente_nome = st.selectbox("Paciente*", pacientes_df['nome_completo'])
-                        
-                    with col2:
-                        tipo_pacote = st.selectbox("Tipo de Pacote", ["4 seções", "8 seções"])
-                        
-                        if tipo_pacote == "4 seções":
-                            valor_pacote = PRECO_PACOTE_4
-                            total_secoes = 4
-                            st.info(f"💰 Valor: {PRECO_PACOTE_4:,.0f} CVE")
-                        else:
-                            valor_pacote = PRECO_PACOTE_8
-                            total_secoes = 8
-                            st.info(f"💰 Valor: {PRECO_PACOTE_8:,.0f} CVE")
-                    
-                    forma_pagamento = st.selectbox("Forma de Pagamento", 
-                                                 ["Dinheiro", "Transferência", "MB Way", "Outro"])
-                    observacoes = st.text_area("Observações", placeholder="Observações sobre o pacote...")
-                    
-                    if st.form_submit_button("💳 Comprar Pacote"):
-                        paciente_row = pacientes_df[pacientes_df['nome_completo'] == paciente_nome].iloc[0]
-                        paciente_id = converter_numpy_para_python(paciente_row['id'])
-                        
-                        cur = conn.cursor()
-                        cur.execute(
-                            """INSERT INTO pacotes 
-                            (paciente_id, tipo_pacote, total_secoes, valor_total, observacoes) 
-                            VALUES (%s, %s, %s, %s, %s)""",
-                            (paciente_id, tipo_pacote, total_secoes, valor_pacote, observacoes)
-                        )
-                        conn.commit()
-                        
-                        st.success(f"✅ Pacote de {total_secoes} seções adquirido com sucesso!")
-                        st.balloons()
-        
-        else:  # Ver Pacotes Ativos
-            st.subheader("📋 Pacotes Ativos")
-            
-            pacotes_df = pd.read_sql("""
-                SELECT p.nome_completo, pac.tipo_pacote, pac.total_secoes, 
-                       pac.secoes_utilizadas, pac.valor_total, pac.data_compra,
-                       (pac.total_secoes - pac.secoes_utilizadas) as secoes_restantes,
-                       pac.ativo
-                FROM pacotes pac
-                JOIN pacientes p ON pac.paciente_id = p.id
-                WHERE pac.ativo = TRUE
-                ORDER BY pac.data_compra DESC
-            """, conn)
-            
-            if not pacotes_df.empty:
-                # Aplicar conversão numpy
-                for col in ['total_secoes', 'secoes_utilizadas', 'secoes_restantes']:
-                    pacotes_df[col] = pacotes_df[col].apply(converter_numpy_para_python)
-                
-                pacotes_df['data_compra'] = pd.to_datetime(pacotes_df['data_compra']).dt.strftime('%d/%m/%Y')
-                pacotes_df['valor_total'] = pacotes_df['valor_total'].apply(lambda x: f"{converter_numpy_para_python(x):,.0f} CVE")
-                
-                # Renomear colunas para exibição
-                pacotes_df.columns = ['Paciente', 'Pacote', 'Total', 'Utilizadas', 'Valor', 'Data', 'Restantes', 'Ativo']
-                
-                st.dataframe(pacotes_df, use_container_width=True)
-                
-                # Estatísticas dos pacotes
-                total_pacotes = len(pacotes_df)
-                total_secoes_contratadas = pacotes_df['Total'].sum()
-                total_secoes_utilizadas = pacotes_df['Utilizadas'].sum()
-                total_secoes_restantes = pacotes_df['Restantes'].sum()
-                
-                col1, col2, col3, col4 = st.columns(4)
-                with col1:
-                    st.metric("Total Pacotes", total_pacotes)
-                with col2:
-                    st.metric("Sessões Contratadas", total_secoes_contratadas)
-                with col3:
-                    st.metric("Sessões Utilizadas", total_secoes_utilizadas)
-                with col4:
-                    st.metric("Sessões Restantes", total_secoes_restantes)
-            else:
-                st.info("📦 Nenhum pacote ativo encontrado")
-                
-    except Exception as e:
-        st.error(f"❌ Erro ao gerenciar pacotes: {e}")
-    finally:
-        if 'conn' in locals() and conn:
-            conn.close()
-
-# 4. VER PACIENTES
+# 3. VER PACIENTES
 elif menu == "👥 Ver Pacientes":
     st.header("👥 Lista de Pacientes")
     
@@ -502,7 +328,7 @@ elif menu == "👥 Ver Pacientes":
         if 'conn' in locals() and conn:
             conn.close()
 
-# 5. AGENDA DA SEMANA - COM OPÇÃO DE CANCELAR
+# 4. AGENDA DA SEMANA - COM INDICAÇÃO DE TIPO DE CONSULTA
 elif menu == "🗓️ Agenda da Semana":
     st.header("🗓️ Agenda de Consultas")
     
@@ -518,9 +344,8 @@ elif menu == "🗓️ Agenda da Semana":
             agenda_df = pd.read_sql("""
                 SELECT c.id, p.nome_completo, c.data_consulta, 
                        CASE WHEN c.primeira_consulta THEN 'Primeira' ELSE 'Retorno' END as tipo,
-                       c.status, c.valor_consulta,
-                       c.forma_pagamento, c.pagamento_realizado,
-                       c.tipo_pacote
+                       c.status, c.valor_consulta, c.tipo_consulta,
+                       c.forma_pagamento, c.pagamento_realizado
                 FROM consultas c
                 JOIN pacientes p ON c.paciente_id = p.id
                 WHERE DATE(c.data_consulta) = CURRENT_DATE
@@ -530,9 +355,8 @@ elif menu == "🗓️ Agenda da Semana":
             agenda_df = pd.read_sql("""
                 SELECT c.id, p.nome_completo, c.data_consulta, 
                        CASE WHEN c.primeira_consulta THEN 'Primeira' ELSE 'Retorno' END as tipo,
-                       c.status, c.valor_consulta,
-                       c.forma_pagamento, c.pagamento_realizado,
-                       c.tipo_pacote
+                       c.status, c.valor_consulta, c.tipo_consulta,
+                       c.forma_pagamento, c.pagamento_realizado
                 FROM consultas c
                 JOIN pacientes p ON c.paciente_id = p.id
                 WHERE DATE(c.data_consulta) = CURRENT_DATE + INTERVAL '1 day'
@@ -542,9 +366,8 @@ elif menu == "🗓️ Agenda da Semana":
             agenda_df = pd.read_sql("""
                 SELECT c.id, p.nome_completo, c.data_consulta, 
                        CASE WHEN c.primeira_consulta THEN 'Primeira' ELSE 'Retorno' END as tipo,
-                       c.status, c.valor_consulta,
-                       c.forma_pagamento, c.pagamento_realizado,
-                       c.tipo_pacote
+                       c.status, c.valor_consulta, c.tipo_consulta,
+                       c.forma_pagamento, c.pagamento_realizado
                 FROM consultas c
                 JOIN pacientes p ON c.paciente_id = p.id
                 WHERE c.data_consulta BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'
@@ -553,7 +376,7 @@ elif menu == "🗓️ Agenda da Semana":
         
         if not agenda_df.empty:
             # Criar colunas para os cabeçalhos
-            col1, col2, col3, col4, col5, col6 = st.columns([2.5, 1, 1, 1, 1, 1])
+            col1, col2, col3, col4, col5, col6 = st.columns([2.5, 1, 1, 1, 1.2, 1])
             with col1:
                 st.markdown("**Paciente**")
             with col2:
@@ -563,7 +386,7 @@ elif menu == "🗓️ Agenda da Semana":
             with col4:
                 st.markdown("**Status**")
             with col5:
-                st.markdown("**Pagamento**")
+                st.markdown("**Valor/Tipo**")
             with col6:
                 st.markdown("**Ações**")
             
@@ -571,7 +394,7 @@ elif menu == "🗓️ Agenda da Semana":
             
             for _, row in agenda_df.iterrows():
                 with st.container():
-                    col1, col2, col3, col4, col5, col6 = st.columns([2.5, 1, 1, 1, 1, 1])
+                    col1, col2, col3, col4, col5, col6 = st.columns([2.5, 1, 1, 1, 1.2, 1])
                     
                     with col1:
                         st.write(f"**{row['nome_completo']}**")
@@ -593,12 +416,13 @@ elif menu == "🗓️ Agenda da Semana":
                                   unsafe_allow_html=True)
                     
                     with col5:
-                        if row['tipo_pacote']:
-                            st.markdown("📦 **Pacote**")
-                        elif row['pagamento_realizado']:
-                            st.markdown("✅ **Pago**")
+                        tipo_consulta = row['tipo_consulta']
+                        if tipo_consulta == 'pacote_4':
+                            st.markdown("📦 **Pacote 4**")
+                        elif tipo_consulta == 'pacote_8':
+                            st.markdown("📦 **Pacote 8**")
                         else:
-                            st.markdown("⏳ **Pendente**")
+                            st.markdown(f"💰 {converter_numpy_para_python(row['valor_consulta']):,.0f} CVE")
                     
                     with col6:
                         # Só mostrar botão de cancelar se a consulta estiver agendada
@@ -616,10 +440,6 @@ elif menu == "🗓️ Agenda da Semana":
                         else:
                             st.write("—")
                     
-                    if row['tipo_pacote']:
-                        st.caption(f"📦 {row['tipo_pacote']}")
-                    else:
-                        st.caption(f"💰 {converter_numpy_para_python(row['valor_consulta']):,.0f} CVE")
                     st.divider()
                     
             # Estatísticas no final
@@ -627,7 +447,7 @@ elif menu == "🗓️ Agenda da Semana":
             realizadas = len(agenda_df[agenda_df['status'] == 'realizada'])
             faltas = len(agenda_df[agenda_df['status'] == 'falta'])
             canceladas = len(agenda_df[agenda_df['status'] == 'cancelada'])
-            consultas_pacote = len(agenda_df[agenda_df['tipo_pacote'].notna()])
+            consultas_pacote = len(agenda_df[agenda_df['tipo_consulta'].str.startswith('pacote', na=False)])
             
             col_res1, col_res2, col_res3, col_res4, col_res5 = st.columns(5)
             with col_res1:
@@ -649,7 +469,7 @@ elif menu == "🗓️ Agenda da Semana":
         if 'conn' in locals() and conn:
             conn.close()
 
-# 6. REGISTRAR CONSULTA REALIZADA - COM OPÇÃO NÃO COMPARECEU
+# 5. REGISTRAR CONSULTA REALIZADA - COM OPÇÃO NÃO COMPARECEU
 elif menu == "✅ Registrar Consulta Realizada":
     st.header("✅ Registrar Consulta Realizada")
     
@@ -661,8 +481,7 @@ elif menu == "✅ Registrar Consulta Realizada":
             
         consultas_df = pd.read_sql("""
             SELECT c.id, p.nome_completo, c.data_consulta, c.valor_consulta,
-                   c.pagamento_realizado, c.status, c.tipo_pacote,
-                   c.secoes_pacote, c.secoes_utilizadas
+                   c.pagamento_realizado, c.status, c.tipo_consulta
             FROM consultas c
             JOIN pacientes p ON c.paciente_id = p.id
             WHERE c.status = 'agendada' AND c.data_consulta <= NOW() + INTERVAL '1 day'
@@ -672,7 +491,7 @@ elif menu == "✅ Registrar Consulta Realizada":
         if not consultas_df.empty:
             consultas_df['display'] = consultas_df.apply(
                 lambda x: f"{x['nome_completo']} - {x['data_consulta'].strftime('%d/%m/%Y %H:%M')}" + 
-                         (f" (📦 {x['tipo_pacote']})" if x['tipo_pacote'] else ""), 
+                         (f" (📦 {x['tipo_consulta']})" if x['tipo_consulta'].startswith('pacote') else ""), 
                 axis=1
             )
             consulta_selecionada = st.selectbox("Selecionar Consulta:", consultas_df['display'])
@@ -685,8 +504,8 @@ elif menu == "✅ Registrar Consulta Realizada":
             - **Data/Hora:** {consulta_info['data_consulta'].strftime('%d/%m/%Y %H:%M')}
             """
             
-            if consulta_info['tipo_pacote']:
-                info_text += f"- **Tipo:** 📦 {consulta_info['tipo_pacote']} (consulta incluída no pacote)\n"
+            if consulta_info['tipo_consulta'].startswith('pacote'):
+                info_text += f"- **Tipo:** 📦 {consulta_info['tipo_consulta']} (consulta incluída no pacote)\n"
             else:
                 info_text += f"- **Valor:** {converter_numpy_para_python(consulta_info['valor_consulta']):,.0f} CVE\n"
                 info_text += f"- **Pagamento:** {'✅ Pago' if consulta_info['pagamento_realizado'] else '⏳ Pendente'}\n"
@@ -710,19 +529,13 @@ elif menu == "✅ Registrar Consulta Realizada":
                     consulta_id = converter_numpy_para_python(consulta_info['id'])
                     
                     cur = conn.cursor()
-                    
-                    # Se for consulta de pacote, não debitar do pacote
-                    if consulta_info['tipo_pacote']:
-                        cur.execute("UPDATE consultas SET status = 'falta' WHERE id = %s", (consulta_id,))
-                    else:
-                        cur.execute("UPDATE consultas SET status = 'falta' WHERE id = %s", (consulta_id,))
-                    
+                    cur.execute("UPDATE consultas SET status = 'falta' WHERE id = %s", (consulta_id,))
                     conn.commit()
                     st.warning("⚠️ Consulta registrada como falta (paciente não compareceu)")
                     st.rerun()
             
             with col3:
-                if not consulta_info['tipo_pacote'] and not consulta_info['pagamento_realizado'] and consulta_info['status'] == 'realizada':
+                if not consulta_info['tipo_consulta'].startswith('pacote') and not consulta_info['pagamento_realizado'] and consulta_info['status'] == 'realizada':
                     if st.button("💰 Pagamento", use_container_width=True):
                         consulta_id = converter_numpy_para_python(consulta_info['id'])
                         
@@ -742,7 +555,7 @@ elif menu == "✅ Registrar Consulta Realizada":
         if 'conn' in locals() and conn:
             conn.close()
 
-# 7. ESTATÍSTICAS
+# 6. ESTATÍSTICAS - ATUALIZADAS PARA INCLUIR PACOTES
 elif menu == "📊 Estatísticas":
     st.header("📊 Estatísticas do Consultório")
     
@@ -772,19 +585,19 @@ elif menu == "📊 Estatísticas":
                 FROM consultas 
                 WHERE status = 'realizada' 
                 AND EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM NOW())
-                AND tipo_pacote IS NULL
+                AND tipo_consulta = 'normal'
             """, conn)
             receita_valor = converter_numpy_para_python(receita_mes.iloc[0]['total'])
-            st.metric("Receita do Mês (CVE)", f"{receita_valor:,.0f}")
+            st.metric("Receita Normal (CVE)", f"{receita_valor:,.0f}")
         
         with col4:
-            receita_pacotes = pd.read_sql("""
-                SELECT COALESCE(SUM(valor_total), 0) as total 
-                FROM pacotes 
-                WHERE EXTRACT(MONTH FROM data_compra) = EXTRACT(MONTH FROM NOW())
+            consultas_pacote_mes = pd.read_sql("""
+                SELECT COUNT(*) as total 
+                FROM consultas 
+                WHERE EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM NOW())
+                AND tipo_consulta LIKE 'pacote%'
             """, conn)
-            pacotes_valor = converter_numpy_para_python(receita_pacotes.iloc[0]['total'])
-            st.metric("Venda de Pacotes (CVE)", f"{pacotes_valor:,.0f}")
+            st.metric("Consultas em Pacote", converter_numpy_para_python(consultas_pacote_mes.iloc[0]['total']))
         
         with col5:
             taxa_falta = pd.read_sql("""
@@ -799,46 +612,25 @@ elif menu == "📊 Estatísticas":
             taxa_valor = converter_numpy_para_python(taxa_falta.iloc[0]['taxa']) if not pd.isna(taxa_falta.iloc[0]['taxa']) else 0
             st.metric("Taxa de Faltas (%)", f"{taxa_valor}")
         
-        st.subheader("📊 Consultas por Status (Este Mês)")
-        status_df = pd.read_sql("""
-            SELECT status, COUNT(*) as quantidade
+        st.subheader("📊 Distribuição por Tipo de Consulta")
+        tipo_df = pd.read_sql("""
+            SELECT 
+                CASE 
+                    WHEN tipo_consulta = 'normal' THEN 'Consultas Normais'
+                    WHEN tipo_consulta = 'pacote_4' THEN 'Pacote 4 seções'
+                    WHEN tipo_consulta = 'pacote_8' THEN 'Pacote 8 seções'
+                END as tipo,
+                COUNT(*) as quantidade
             FROM consultas
             WHERE EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM NOW())
-            GROUP BY status
+            GROUP BY tipo_consulta
         """, conn)
         
-        if not status_df.empty:
-            status_df['quantidade'] = status_df['quantidade'].apply(converter_numpy_para_python)
-            st.bar_chart(status_df.set_index('status'))
+        if not tipo_df.empty:
+            tipo_df['quantidade'] = tipo_df['quantidade'].apply(converter_numpy_para_python)
+            st.bar_chart(tipo_df.set_index('tipo'))
         else:
             st.info("📊 Sem dados para o mês atual")
-        
-        # Estatísticas de Pacotes
-        st.subheader("📦 Estatísticas de Pacotes")
-        
-        col_p1, col_p2, col_p3 = st.columns(3)
-        
-        with col_p1:
-            total_pacotes_vendidos = pd.read_sql("SELECT COUNT(*) as total FROM pacotes", conn)
-            st.metric("Total Pacotes Vendidos", converter_numpy_para_python(total_pacotes_vendidos.iloc[0]['total']))
-        
-        with col_p2:
-            secoes_pacote = pd.read_sql("""
-                SELECT SUM(total_secoes) as total, SUM(secoes_utilizadas) as utilizadas
-                FROM pacotes
-            """, conn)
-            
-            if not secoes_pacote.empty:
-                total_secoes = converter_numpy_para_python(secoes_pacote.iloc[0]['total'] or 0)
-                utilizadas = converter_numpy_para_python(secoes_pacote.iloc[0]['utilizadas'] or 0)
-                restantes = total_secoes - utilizadas
-                
-                st.metric("Sessões em Pacote", f"{utilizadas}/{total_secoes}")
-        
-        with col_p3:
-            with col_p3:
-                taxa_utilizacao = (utilizadas / total_secoes * 100) if total_secoes > 0 else 0
-                st.metric("Taxa de Utilização", f"{taxa_utilizacao:.1f}%")
             
     except Exception as e:
         st.error(f"❌ Erro ao gerar estatísticas: {e}")
