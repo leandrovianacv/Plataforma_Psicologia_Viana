@@ -2,7 +2,6 @@ import streamlit as st
 import psycopg2
 import pandas as pd
 from datetime import datetime, date, time, timedelta
-import pytz
 import os
 import numpy as np
 import warnings
@@ -19,13 +18,6 @@ def converter_numpy_para_python(valor):
         return bool(valor)
     else:
         return valor
-
-# Função para obter hora atual de Cabo Verde (UTC-1)
-def hora_cv_agora():
-    """Retorna a data e hora atual em Cabo Verde (UTC-1)"""
-    fuso_cv = pytz.timezone('Atlantic/Cape_Verde')
-    agora_cv = datetime.now(fuso_cv)
-    return agora_cv
 
 # Configuração da página
 st.set_page_config(
@@ -127,11 +119,6 @@ if inicializar_banco():
 else:
     st.sidebar.error("❌ Falha na conexão com Supabase")
 
-# Mostrar hora atual de Cabo Verde no sidebar
-agora_cv = hora_cv_agora()
-st.sidebar.markdown("---")
-st.sidebar.markdown(f"**🕐 Hora em Cabo Verde:** {agora_cv.strftime('%d/%m/%Y %H:%M')}")
-
 # HEADER PERSONALIZADO
 st.markdown("<h1 style='text-align: center; color: #1f77b4;'>🧠 PSICARE BY BELINDA VIANA</h1>", unsafe_allow_html=True)
 st.markdown("---")
@@ -207,7 +194,7 @@ if menu == "➕ Cadastrar Paciente":
             else:
                 st.error("❌ Preencha os campos obrigatórios: Nome Completo e Telefone")
 
-# 2. MARCAR CONSULTA - COM FUSO HORÁRIO CORRIGIDO
+# 2. MARCAR CONSULTA - SEM NENHUM FILTRO DE HORÁRIO
 elif menu == "📅 Marcar Consulta":
     st.header("📅 Marcar Nova Consulta")
     
@@ -229,13 +216,6 @@ elif menu == "📅 Marcar Consulta":
                     paciente_nome = st.selectbox("Paciente*", pacientes_df['nome_completo'])
                     data_consulta = st.date_input("Data*", min_value=date.today())
                     
-                    # Data e hora atual de Cabo Verde
-                    agora_cv = hora_cv_agora()
-                    data_atual_cv = agora_cv.date()
-                    hora_atual_cv = agora_cv.time()
-                    
-                    st.info(f"🕐 Hora atual em Cabo Verde: {hora_atual_cv.strftime('%H:%M')}")
-                    
                     # GERAR TODOS OS HORÁRIOS POSSÍVEIS (8h às 20h)
                     todos_horarios = []
                     for hora in range(8, 21):
@@ -244,19 +224,9 @@ elif menu == "📅 Marcar Consulta":
                                 continue
                             todos_horarios.append(time(hora, minuto))
                     
-                    # FILTRAR APENAS HORÁRIOS PASSADOS (SE FOR HOJE)
-                    horarios_validos = []
-                    
-                    for horario in todos_horarios:
-                        # Se for hoje, remover horários passados (comparando com hora de Cabo Verde)
-                        if data_consulta == data_atual_cv and horario <= hora_atual_cv:
-                            continue
-                        
-                        horarios_validos.append(horario)
-                    
-                    # REMOVER HORÁRIOS JÁ OCUPADOS
+                    # REMOVER APENAS HORÁRIOS JÁ OCUPADOS
                     horarios_livres = []
-                    for horario in horarios_validos:
+                    for horario in todos_horarios:
                         data_hora = datetime.combine(data_consulta, horario)
                         cur = conn.cursor()
                         cur.execute(
@@ -266,7 +236,7 @@ elif menu == "📅 Marcar Consulta":
                         if cur.fetchone() is None:
                             horarios_livres.append(horario)
                     
-                    # MOSTRAR SELECTBOX
+                    # MOSTRAR SELECTBOX COM TODOS OS HORÁRIOS
                     if horarios_livres:
                         hora_consulta = st.selectbox(
                             "Horário*", 
@@ -293,14 +263,9 @@ elif menu == "📅 Marcar Consulta":
                     if hora_consulta is None:
                         st.error("❌ Selecione um horário válido!")
                     else:
-                        # Verificar se é horário passado (usando hora de Cabo Verde)
-                        if data_consulta == data_atual_cv and hora_consulta <= hora_atual_cv:
-                            st.error("❌ Não é possível marcar consultas em horários que já passaram!")
-                            st.stop()
-                        
                         data_hora = datetime.combine(data_consulta, hora_consulta)
                         
-                        # Verificar se horário está ocupado
+                        # Verificar se horário está ocupado (segurança)
                         cur.execute(
                             "SELECT id FROM consultas WHERE data_consulta = %s AND status IN ('agendada', 'realizada')",
                             (data_hora,)
@@ -323,7 +288,7 @@ elif menu == "📅 Marcar Consulta":
                              forma_pagamento, observacoes)
                         )
                         conn.commit()
-                        st.success(f"✅ Consulta marcada para {data_consulta.strftime('%d/%m/%Y')} às {hora_consulta.strftime('%H:%M')} (CVT)")
+                        st.success(f"✅ Consulta marcada para {data_consulta.strftime('%d/%m/%Y')} às {hora_consulta.strftime('%H:%M')}")
                         st.balloons()
                     
     except Exception as e:
@@ -540,7 +505,7 @@ elif menu == "✅ Registrar Consulta Realizada":
             st.info(f"""
             **Detalhes da Consulta:**
             - **Paciente:** {consulta_info['nome_completo']}
-            - **Data/Hora:** {consulta_info['data_consulta'].strftime('%d/%m/%Y %H:%M')} (CVT)
+            - **Data/Hora:** {consulta_info['data_consulta'].strftime('%d/%m/%Y %H:%M')}
             - **Valor:** {converter_numpy_para_python(consulta_info['valor_consulta']):,.0f} CVE
             - **Pagamento:** {'✅ Pago' if consulta_info['pagamento_realizado'] else '⏳ Pendente'}
             """)
