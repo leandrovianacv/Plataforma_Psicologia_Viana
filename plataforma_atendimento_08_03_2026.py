@@ -66,35 +66,6 @@ def conectar_banco():
         st.error(f"Erro ao conectar: {e}")
         return None
 
-# Função para verificar e adicionar coluna tipo_consulta se não existir
-def verificar_e_atualizar_tabela():
-    """Verifica se a coluna tipo_consulta existe e adiciona se necessário"""
-    try:
-        conn = conectar_banco()
-        if conn is None:
-            return False
-            
-        cur = conn.cursor()
-        
-        # Verificar se a coluna tipo_consulta existe
-        cur.execute("""
-            SELECT column_name 
-            FROM information_schema.columns 
-            WHERE table_name='consultas' AND column_name='tipo_consulta'
-        """)
-        
-        if not cur.fetchone():
-            # Coluna não existe, adicionar
-            cur.execute("ALTER TABLE consultas ADD COLUMN tipo_consulta VARCHAR(20) DEFAULT 'normal'")
-            conn.commit()
-            st.sidebar.info("✅ Tabela atualizada: coluna 'tipo_consulta' adicionada")
-        
-        conn.close()
-        return True
-    except Exception as e:
-        st.sidebar.error(f"Erro ao verificar tabela: {e}")
-        return False
-
 # Inicializar banco (criar tabelas se não existirem)
 def inicializar_banco():
     """Garante que as tabelas necessárias existam"""
@@ -123,7 +94,7 @@ def inicializar_banco():
             );
         """)
         
-        # Tabela consultas - VERIFICANDO SE A COLUNA TIPO_CONSULTA JÁ EXISTE
+        # Tabela consultas
         cur.execute("""
             CREATE TABLE IF NOT EXISTS consultas (
                 id SERIAL PRIMARY KEY,
@@ -141,10 +112,6 @@ def inicializar_banco():
         
         conn.commit()
         conn.close()
-        
-        # Verificar e adicionar coluna tipo_consulta
-        verificar_e_atualizar_tabela()
-        
         return True
     except Exception as e:
         st.error(f"Erro ao inicializar banco: {e}")
@@ -229,7 +196,7 @@ if menu == "➕ Cadastrar Paciente":
             else:
                 st.error("❌ Preencha os campos obrigatórios (*)")
 
-# 2. MARCAR CONSULTA - COM OPÇÃO DE PACOTE DIRETO NO FORMULÁRIO
+# 2. MARCAR CONSULTA  
 elif menu == "📅 Marcar Consulta":
     st.header("📅 Marcar Nova Consulta")
     
@@ -254,31 +221,10 @@ elif menu == "📅 Marcar Consulta":
                 
                 with col2: 
                     primeira_consulta = st.checkbox("Primeira Consulta", value=True)
-                    
-                    # OPÇÃO DE TIPO DE CONSULTA: Normal ou Pacotes
-                    tipo_consulta = st.radio(
-                        "Tipo de Consulta",
-                        ["Normal", "Pacote 4 seções (1.750€ cada)", "Pacote 8 seções (1.500€ cada)"],
-                        horizontal=True
-                    )
-                    
-                    # Definir valor baseado no tipo de consulta
-                    if tipo_consulta == "Normal":
-                        valor_consulta = st.number_input("Valor da Consulta (CVE)", 
-                                                       min_value=0.0, 
-                                                       value=2500.0 if primeira_consulta else 2000.0,
-                                                       step=100.0,
-                                                       help="Valor para consulta avulsa")
-                        tipo_consulta_db = "normal"
-                    elif tipo_consulta == "Pacote 4 seções (1.750€ cada)":
-                        valor_consulta = 1750.0
-                        st.info(f"💰 Valor por sessão: 1.750 CVE (Total do pacote: 7.000 CVE)")
-                        tipo_consulta_db = "pacote_4"
-                    else:  # Pacote 8 seções
-                        valor_consulta = 1500.0
-                        st.info(f"💰 Valor por sessão: 1.500 CVE (Total do pacote: 12.000 CVE)")
-                        tipo_consulta_db = "pacote_8"
-                    
+                    valor_consulta = st.number_input("Valor da Consulta (CVE)", 
+                                                   min_value=0.0, 
+                                                   value=2500.0 if primeira_consulta else 2000.0,
+                                                   step=100.0)
                     forma_pagamento = st.selectbox("Forma de Pagamento", 
                                                  ["Dinheiro", "Transferência", "MB Way", "Outro"])
                 
@@ -291,20 +237,16 @@ elif menu == "📅 Marcar Consulta":
                     data_hora = datetime.combine(data_consulta, hora_consulta)
                     
                     cur = conn.cursor()
-                    
-                    # Inserir consulta com tipo_consulta
                     cur.execute(
                         """INSERT INTO consultas 
                         (paciente_id, data_consulta, primeira_consulta, valor_consulta, 
-                         tipo_consulta, forma_pagamento, observacoes_tecnicas) 
-                        VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                         forma_pagamento, observacoes_tecnicas) 
+                        VALUES (%s, %s, %s, %s, %s, %s)""",
                         (paciente_id, data_hora, primeira_consulta, valor_consulta, 
-                         tipo_consulta_db, forma_pagamento, observacoes)
+                         forma_pagamento, observacoes)
                     )
                     conn.commit()
-                    
-                    mensagem_tipo = "consulta normal" if tipo_consulta_db == "normal" else f"consulta de {tipo_consulta}"
-                    st.success(f"✅ {mensagem_tipo.title()} marcada para {data_consulta.strftime('%d/%m/%Y')} às {hora_consulta.strftime('%H:%M')}")
+                    st.success(f"✅ Consulta marcada para {data_consulta.strftime('%d/%m/%Y')} às {hora_consulta.strftime('%H:%M')}")
                     
     except Exception as e:
         st.error(f"❌ Erro: {e}")
@@ -360,7 +302,7 @@ elif menu == "👥 Ver Pacientes":
         if 'conn' in locals() and conn:
             conn.close()
 
-# 4. AGENDA DA SEMANA - COM TRATAMENTO DE ERRO PARA COLUNA TIPO_CONSULTA
+# 4. AGENDA DA SEMANA - COM OPÇÃO DE CANCELAR
 elif menu == "🗓️ Agenda da Semana":
     st.header("🗓️ Agenda de Consultas")
     
@@ -371,99 +313,60 @@ elif menu == "🗓️ Agenda da Semana":
         if conn is None:
             st.error("❌ Não foi possível conectar ao banco de dados")
             st.stop()
-        
-        # Verificar se a coluna tipo_consulta existe
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT column_name 
-            FROM information_schema.columns 
-            WHERE table_name='consultas' AND column_name='tipo_consulta'
-        """)
-        
-        tem_tipo_consulta = cur.fetchone() is not None
-        
-        # Construir query baseada na existência da coluna
-        if tem_tipo_consulta:
-            select_colunas = """
-                c.id, p.nome_completo, c.data_consulta, 
-                CASE WHEN c.primeira_consulta THEN 'Primeira' ELSE 'Retorno' END as tipo,
-                c.status, c.valor_consulta, c.tipo_consulta,
-                c.forma_pagamento, c.pagamento_realizado
-            """
-        else:
-            select_colunas = """
-                c.id, p.nome_completo, c.data_consulta, 
-                CASE WHEN c.primeira_consulta THEN 'Primeira' ELSE 'Retorno' END as tipo,
-                c.status, c.valor_consulta,
-                c.forma_pagamento, c.pagamento_realizado
-            """
-        
+            
         if opcao_agenda == "Hoje":
-            query = f"""
-                SELECT {select_colunas}
+            agenda_df = pd.read_sql("""
+                SELECT c.id, p.nome_completo, c.data_consulta, 
+                       CASE WHEN c.primeira_consulta THEN 'Primeira' ELSE 'Retorno' END as tipo,
+                       c.status, c.valor_consulta,
+                       c.forma_pagamento, c.pagamento_realizado
                 FROM consultas c
                 JOIN pacientes p ON c.paciente_id = p.id
                 WHERE DATE(c.data_consulta) = CURRENT_DATE
                 ORDER BY c.data_consulta
-            """
+            """, conn)
         elif opcao_agenda == "Amanhã":
-            query = f"""
-                SELECT {select_colunas}
+            agenda_df = pd.read_sql("""
+                SELECT c.id, p.nome_completo, c.data_consulta, 
+                       CASE WHEN c.primeira_consulta THEN 'Primeira' ELSE 'Retorno' END as tipo,
+                       c.status, c.valor_consulta,
+                       c.forma_pagamento, c.pagamento_realizado
                 FROM consultas c
                 JOIN pacientes p ON c.paciente_id = p.id
                 WHERE DATE(c.data_consulta) = CURRENT_DATE + INTERVAL '1 day'
                 ORDER BY c.data_consulta
-            """
+            """, conn)
         else:
-            query = f"""
-                SELECT {select_colunas}
+            agenda_df = pd.read_sql("""
+                SELECT c.id, p.nome_completo, c.data_consulta, 
+                       CASE WHEN c.primeira_consulta THEN 'Primeira' ELSE 'Retorno' END as tipo,
+                       c.status, c.valor_consulta,
+                       c.forma_pagamento, c.pagamento_realizado
                 FROM consultas c
                 JOIN pacientes p ON c.paciente_id = p.id
                 WHERE c.data_consulta BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'
                 ORDER BY c.data_consulta
-            """
-        
-        agenda_df = pd.read_sql(query, conn)
+            """, conn)
         
         if not agenda_df.empty:
-            # Determinar número de colunas baseado na existência de tipo_consulta
-            if tem_tipo_consulta:
-                col_headers = [2.5, 1, 1, 1, 1.2, 1]
-                col1, col2, col3, col4, col5, col6 = st.columns(col_headers)
-                with col1:
-                    st.markdown("**Paciente**")
-                with col2:
-                    st.markdown("**Horário**")
-                with col3:
-                    st.markdown("**Tipo**")
-                with col4:
-                    st.markdown("**Status**")
-                with col5:
-                    st.markdown("**Valor/Tipo**")
-                with col6:
-                    st.markdown("**Ações**")
-            else:
-                col_headers = [3, 1, 1, 1, 1]
-                col1, col2, col3, col4, col5 = st.columns(col_headers)
-                with col1:
-                    st.markdown("**Paciente**")
-                with col2:
-                    st.markdown("**Horário**")
-                with col3:
-                    st.markdown("**Tipo**")
-                with col4:
-                    st.markdown("**Status**")
-                with col5:
-                    st.markdown("**Ações**")
+            # Criar colunas para os cabeçalhos
+            col1, col2, col3, col4, col5 = st.columns([3, 1, 1, 1, 1])
+            with col1:
+                st.markdown("**Paciente**")
+            with col2:
+                st.markdown("**Horário**")
+            with col3:
+                st.markdown("**Tipo**")
+            with col4:
+                st.markdown("**Status**")
+            with col5:
+                st.markdown("**Ações**")
             
             st.divider()
             
             for _, row in agenda_df.iterrows():
                 with st.container():
-                    if tem_tipo_consulta:
-                        col1, col2, col3, col4, col5, col6 = st.columns(col_headers)
-                    else:
-                        col1, col2, col3, col4, col5 = st.columns(col_headers)
+                    col1, col2, col3, col4, col5 = st.columns([3, 1, 1, 1, 1])
                     
                     with col1:
                         st.write(f"**{row['nome_completo']}**")
@@ -484,50 +387,23 @@ elif menu == "🗓️ Agenda da Semana":
                         st.markdown(f"<span style='color:{status_color}'>{row['status'].title()}</span>", 
                                   unsafe_allow_html=True)
                     
-                    if tem_tipo_consulta:
-                        with col5:
-                            if 'tipo_consulta' in row and row['tipo_consulta'] in ['pacote_4', 'pacote_8']:
-                                tipo_display = "Pacote 4" if row['tipo_consulta'] == 'pacote_4' else "Pacote 8"
-                                st.markdown(f"📦 **{tipo_display}**")
-                            else:
-                                st.markdown(f"💰 {converter_numpy_para_python(row['valor_consulta']):,.0f} CVE")
-                        
-                        with col6:
-                            # Só mostrar botão de cancelar se a consulta estiver agendada
-                            if row['status'] == 'agendada':
-                                consulta_id = converter_numpy_para_python(row['id'])
-                                if st.button(f"❌ Cancelar", key=f"cancel_{consulta_id}", use_container_width=True):
-                                    try:
-                                        cur = conn.cursor()
-                                        cur.execute("UPDATE consultas SET status = 'cancelada' WHERE id = %s", (consulta_id,))
-                                        conn.commit()
-                                        st.success("✅ Consulta cancelada com sucesso!")
-                                        st.rerun()
-                                    except Exception as e:
-                                        st.error(f"Erro ao cancelar: {e}")
-                            else:
-                                st.write("—")
-                    else:
-                        with col5:
-                            # Só mostrar botão de cancelar se a consulta estiver agendada
-                            if row['status'] == 'agendada':
-                                consulta_id = converter_numpy_para_python(row['id'])
-                                if st.button(f"❌ Cancelar", key=f"cancel_{consulta_id}", use_container_width=True):
-                                    try:
-                                        cur = conn.cursor()
-                                        cur.execute("UPDATE consultas SET status = 'cancelada' WHERE id = %s", (consulta_id,))
-                                        conn.commit()
-                                        st.success("✅ Consulta cancelada com sucesso!")
-                                        st.rerun()
-                                    except Exception as e:
-                                        st.error(f"Erro ao cancelar: {e}")
-                            else:
-                                st.write("—")
+                    with col5:
+                        # Só mostrar botão de cancelar se a consulta estiver agendada
+                        if row['status'] == 'agendada':
+                            consulta_id = converter_numpy_para_python(row['id'])
+                            if st.button(f"❌ Cancelar", key=f"cancel_{consulta_id}", use_container_width=True):
+                                try:
+                                    cur = conn.cursor()
+                                    cur.execute("UPDATE consultas SET status = 'cancelada' WHERE id = %s", (consulta_id,))
+                                    conn.commit()
+                                    st.success("✅ Consulta cancelada com sucesso!")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Erro ao cancelar: {e}")
+                        else:
+                            st.write("—")
                     
-                    if tem_tipo_consulta and 'tipo_consulta' in row and row['tipo_consulta'] in ['pacote_4', 'pacote_8']:
-                        st.caption(f"📦 Consulta de pacote")
-                    else:
-                        st.caption(f"💰 {converter_numpy_para_python(row['valor_consulta']):,.0f} CVE")
+                    st.caption(f"💰 {converter_numpy_para_python(row['valor_consulta']):,.0f} CVE")
                     st.divider()
                     
             # Estatísticas no final
@@ -536,29 +412,15 @@ elif menu == "🗓️ Agenda da Semana":
             faltas = len(agenda_df[agenda_df['status'] == 'falta'])
             canceladas = len(agenda_df[agenda_df['status'] == 'cancelada'])
             
-            if tem_tipo_consulta and 'tipo_consulta' in agenda_df.columns:
-                consultas_pacote = len(agenda_df[agenda_df['tipo_consulta'].isin(['pacote_4', 'pacote_8'])])
-                col_res1, col_res2, col_res3, col_res4, col_res5 = st.columns(5)
-                with col_res1:
-                    st.metric("Total", total_consultas)
-                with col_res2:
-                    st.metric("Realizadas", realizadas)
-                with col_res3:
-                    st.metric("Faltas", faltas)
-                with col_res4:
-                    st.metric("Canceladas", canceladas)
-                with col_res5:
-                    st.metric("Em Pacote", consultas_pacote)
-            else:
-                col_res1, col_res2, col_res3, col_res4 = st.columns(4)
-                with col_res1:
-                    st.metric("Total", total_consultas)
-                with col_res2:
-                    st.metric("Realizadas", realizadas)
-                with col_res3:
-                    st.metric("Faltas", faltas)
-                with col_res4:
-                    st.metric("Canceladas", canceladas)
+            col_res1, col_res2, col_res3, col_res4 = st.columns(4)
+            with col_res1:
+                st.metric("Total", total_consultas)
+            with col_res2:
+                st.metric("Realizadas", realizadas)
+            with col_res3:
+                st.metric("Faltas", faltas)
+            with col_res4:
+                st.metric("Canceladas", canceladas)
         else:
             st.info("📅 Nenhuma consulta agendada para o período selecionado")
             
@@ -577,63 +439,29 @@ elif menu == "✅ Registrar Consulta Realizada":
         if conn is None:
             st.error("❌ Não foi possível conectar ao banco de dados")
             st.stop()
-        
-        # Verificar se a coluna tipo_consulta existe
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT column_name 
-            FROM information_schema.columns 
-            WHERE table_name='consultas' AND column_name='tipo_consulta'
-        """)
-        
-        tem_tipo_consulta = cur.fetchone() is not None
-        
-        if tem_tipo_consulta:
-            consultas_df = pd.read_sql("""
-                SELECT c.id, p.nome_completo, c.data_consulta, c.valor_consulta,
-                       c.pagamento_realizado, c.status, c.tipo_consulta
-                FROM consultas c
-                JOIN pacientes p ON c.paciente_id = p.id
-                WHERE c.status = 'agendada' AND c.data_consulta <= NOW() + INTERVAL '1 day'
-                ORDER BY c.data_consulta
-            """, conn)
-        else:
-            consultas_df = pd.read_sql("""
-                SELECT c.id, p.nome_completo, c.data_consulta, c.valor_consulta,
-                       c.pagamento_realizado, c.status
-                FROM consultas c
-                JOIN pacientes p ON c.paciente_id = p.id
-                WHERE c.status = 'agendada' AND c.data_consulta <= NOW() + INTERVAL '1 day'
-                ORDER BY c.data_consulta
-            """, conn)
+            
+        consultas_df = pd.read_sql("""
+            SELECT c.id, p.nome_completo, c.data_consulta, c.valor_consulta,
+                   c.pagamento_realizado, c.status
+            FROM consultas c
+            JOIN pacientes p ON c.paciente_id = p.id
+            WHERE c.status = 'agendada' AND c.data_consulta <= NOW() + INTERVAL '1 day'
+            ORDER BY c.data_consulta
+        """, conn)
         
         if not consultas_df.empty:
-            if tem_tipo_consulta and 'tipo_consulta' in consultas_df.columns:
-                consultas_df['display'] = consultas_df.apply(
-                    lambda x: f"{x['nome_completo']} - {x['data_consulta'].strftime('%d/%m/%Y %H:%M')}" + 
-                             (f" (📦 {x['tipo_consulta']})" if x['tipo_consulta'] in ['pacote_4', 'pacote_8'] else ""), 
-                    axis=1
-                )
-            else:
-                consultas_df['display'] = consultas_df['nome_completo'] + " - " + consultas_df['data_consulta'].dt.strftime('%d/%m/%Y %H:%M')
-            
+            consultas_df['display'] = consultas_df['nome_completo'] + " - " + consultas_df['data_consulta'].dt.strftime('%d/%m/%Y %H:%M')
             consulta_selecionada = st.selectbox("Selecionar Consulta:", consultas_df['display'])
             
             consulta_info = consultas_df[consultas_df['display'] == consulta_selecionada].iloc[0]
             
-            info_text = f"""
+            st.info(f"""
             **Detalhes da Consulta:**
             - **Paciente:** {consulta_info['nome_completo']}
             - **Data/Hora:** {consulta_info['data_consulta'].strftime('%d/%m/%Y %H:%M')}
-            """
-            
-            if tem_tipo_consulta and 'tipo_consulta' in consulta_info and consulta_info['tipo_consulta'] in ['pacote_4', 'pacote_8']:
-                info_text += f"- **Tipo:** 📦 {consulta_info['tipo_consulta']} (consulta incluída no pacote)\n"
-            else:
-                info_text += f"- **Valor:** {converter_numpy_para_python(consulta_info['valor_consulta']):,.0f} CVE\n"
-                info_text += f"- **Pagamento:** {'✅ Pago' if consulta_info['pagamento_realizado'] else '⏳ Pendente'}\n"
-            
-            st.info(info_text)
+            - **Valor:** {converter_numpy_para_python(consulta_info['valor_consulta']):,.0f} CVE
+            - **Pagamento:** {'✅ Pago' if consulta_info['pagamento_realizado'] else '⏳ Pendente'}
+            """)
             
             col1, col2, col3 = st.columns(3)
             
@@ -658,9 +486,7 @@ elif menu == "✅ Registrar Consulta Realizada":
                     st.rerun()
             
             with col3:
-                if tem_tipo_consulta and 'tipo_consulta' in consulta_info and consulta_info['tipo_consulta'] in ['pacote_4', 'pacote_8']:
-                    st.button("💰 Pagamento", disabled=True, use_container_width=True)
-                elif not consulta_info['pagamento_realizado'] and consulta_info['status'] == 'realizada':
+                if not consulta_info['pagamento_realizado'] and consulta_info['status'] == 'realizada':
                     if st.button("💰 Pagamento", use_container_width=True):
                         consulta_id = converter_numpy_para_python(consulta_info['id'])
                         
@@ -680,7 +506,7 @@ elif menu == "✅ Registrar Consulta Realizada":
         if 'conn' in locals() and conn:
             conn.close()
 
-# 6. ESTATÍSTICAS - COM TRATAMENTO PARA COLUNA TIPO_CONSULTA
+# 6. ESTATÍSTICAS
 elif menu == "📊 Estatísticas":
     st.header("📊 Estatísticas do Consultório")
     
@@ -689,18 +515,8 @@ elif menu == "📊 Estatísticas":
         if conn is None:
             st.error("❌ Não foi possível conectar ao banco de dados")
             st.stop()
-        
-        # Verificar se a coluna tipo_consulta existe
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT column_name 
-            FROM information_schema.columns 
-            WHERE table_name='consultas' AND column_name='tipo_consulta'
-        """)
-        
-        tem_tipo_consulta = cur.fetchone() is not None
-        
-        col1, col2, col3, col4, col5 = st.columns(5)
+            
+        col1, col2, col3, col4 = st.columns(4)
         
         with col1:
             total_pacientes = pd.read_sql("SELECT COUNT(*) as total FROM pacientes WHERE ativo = TRUE", conn)
@@ -715,37 +531,16 @@ elif menu == "📊 Estatísticas":
             st.metric("Consultas este Mês", converter_numpy_para_python(consultas_mes.iloc[0]['total']))
         
         with col3:
-            if tem_tipo_consulta:
-                receita_mes = pd.read_sql("""
-                    SELECT COALESCE(SUM(valor_consulta), 0) as total 
-                    FROM consultas 
-                    WHERE status = 'realizada' 
-                    AND EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM NOW())
-                    AND (tipo_consulta = 'normal' OR tipo_consulta IS NULL)
-                """, conn)
-            else:
-                receita_mes = pd.read_sql("""
-                    SELECT COALESCE(SUM(valor_consulta), 0) as total 
-                    FROM consultas 
-                    WHERE status = 'realizada' 
-                    AND EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM NOW())
-                """, conn)
+            receita_mes = pd.read_sql("""
+                SELECT COALESCE(SUM(valor_consulta), 0) as total 
+                FROM consultas 
+                WHERE status = 'realizada' 
+                AND EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM NOW())
+            """, conn)
             receita_valor = converter_numpy_para_python(receita_mes.iloc[0]['total'])
-            st.metric("Receita Normal (CVE)", f"{receita_valor:,.0f}")
+            st.metric("Receita do Mês (CVE)", f"{receita_valor:,.0f}")
         
         with col4:
-            if tem_tipo_consulta:
-                consultas_pacote_mes = pd.read_sql("""
-                    SELECT COUNT(*) as total 
-                    FROM consultas 
-                    WHERE EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM NOW())
-                    AND tipo_consulta IN ('pacote_4', 'pacote_8')
-                """, conn)
-                st.metric("Consultas em Pacote", converter_numpy_para_python(consultas_pacote_mes.iloc[0]['total']))
-            else:
-                st.metric("Consultas em Pacote", 0)
-        
-        with col5:
             taxa_falta = pd.read_sql("""
                 SELECT 
                     ROUND(
@@ -758,29 +553,19 @@ elif menu == "📊 Estatísticas":
             taxa_valor = converter_numpy_para_python(taxa_falta.iloc[0]['taxa']) if not pd.isna(taxa_falta.iloc[0]['taxa']) else 0
             st.metric("Taxa de Faltas (%)", f"{taxa_valor}")
         
-        st.subheader("📊 Distribuição por Tipo de Consulta")
+        st.subheader("📊 Consultas por Status (Este Mês)")
+        status_df = pd.read_sql("""
+            SELECT status, COUNT(*) as quantidade
+            FROM consultas
+            WHERE EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM NOW())
+            GROUP BY status
+        """, conn)
         
-        if tem_tipo_consulta:
-            tipo_df = pd.read_sql("""
-                SELECT 
-                    CASE 
-                        WHEN tipo_consulta = 'normal' OR tipo_consulta IS NULL THEN 'Consultas Normais'
-                        WHEN tipo_consulta = 'pacote_4' THEN 'Pacote 4 seções'
-                        WHEN tipo_consulta = 'pacote_8' THEN 'Pacote 8 seções'
-                    END as tipo,
-                    COUNT(*) as quantidade
-                FROM consultas
-                WHERE EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM NOW())
-                GROUP BY tipo_consulta
-            """, conn)
-            
-            if not tipo_df.empty:
-                tipo_df['quantidade'] = tipo_df['quantidade'].apply(converter_numpy_para_python)
-                st.bar_chart(tipo_df.set_index('tipo'))
-            else:
-                st.info("📊 Sem dados para o mês atual")
+        if not status_df.empty:
+            status_df['quantidade'] = status_df['quantidade'].apply(converter_numpy_para_python)
+            st.bar_chart(status_df.set_index('status'))
         else:
-            st.info("📊 A coluna 'tipo_consulta' ainda não existe. Após marcar algumas consultas com o novo sistema, as estatísticas serão exibidas aqui.")
+            st.info("📊 Sem dados para o mês atual")
             
     except Exception as e:
         st.error(f"❌ Erro ao gerar estatísticas: {e}")
