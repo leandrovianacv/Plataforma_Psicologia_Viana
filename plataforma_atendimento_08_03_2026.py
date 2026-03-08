@@ -655,7 +655,7 @@ elif menu == "📊 Estatísticas":
 st.markdown("---")
 st.markdown(
     "<div style='text-align: center; color: #666; padding: 10px;'>"
-    "🧠 <b>Psicare by Belinda Viana</b> - Consultório de Psicologia | "
+    "🧠 <b>Psicare by Belinda Viana</b>"
     "📞 Contacto: +238 5949955 | "
     "📧 Email: contato@atendimentoviana.cv | "
     "🌐 www.atendimentoviana.cv"
