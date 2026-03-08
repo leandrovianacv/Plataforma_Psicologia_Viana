@@ -236,7 +236,7 @@ if menu == "➕ Cadastrar Paciente":
             else:
                 st.error("❌ Preencha os campos obrigatórios: Nome Completo e Telefone")
 
-# 2. MARCAR CONSULTA - CORRIGIDO (amanhã mostra todos os horários)
+# 2. MARCAR CONSULTA - CORRIGIDO DEFINITIVAMENTE
 elif menu == "📅 Marcar Consulta":
     st.header("📅 Marcar Nova Consulta")
     
@@ -263,7 +263,7 @@ elif menu == "📅 Marcar Consulta":
                     data_atual_cv = agora_cv.date()
                     hora_atual_cv = agora_cv.time()
                     
-                    # Gerar horários de 30 em 30 minutos (8h às 20h)
+                    # Gerar TODOS os horários possíveis (8h às 20h, de 30 em 30)
                     todos_horarios = []
                     for hora in range(8, 21):
                         for minuto in [0, 30]:
@@ -272,26 +272,30 @@ elif menu == "📅 Marcar Consulta":
                             horario = time(hora, minuto)
                             todos_horarios.append(horario)
                     
-                    # Filtrar horários disponíveis:
-                    horarios_disponiveis = []
+                    # Lista para armazenar horários que passarão no selectbox
+                    horarios_para_select = []
                     
                     for horario in todos_horarios:
-                        # 1. Remover horários de aula (para qualquer dia)
+                        # 1. Verificar se é horário de aula (NUNCA disponível)
                         if eh_horario_de_aula(data_consulta, horario):
                             continue
                         
-                        # 2. Se for HOJE, remover horários que já passaram
+                        # 2. Verificar se a data é HOJE
                         if data_consulta == data_atual_cv:
+                            # Para hoje, remover horários que já passaram
                             if horario <= hora_atual_cv:
                                 continue
-                        
-                        # 3. Para AMANHÃ ou futuro, manter TODOS os horários (exceto aulas)
-                        horarios_disponiveis.append(horario)
+                            # Adicionar horários futuros de hoje
+                            horarios_para_select.append(horario)
+                        else:
+                            # Para QUALQUER OUTRO DIA (amanhã, futuro), adicionar TODOS os horários
+                            # que não são de aula, sem restrição de hora
+                            horarios_para_select.append(horario)
                     
                     # Verificar horários já ocupados no banco
                     horarios_livres = []
                     
-                    for horario in horarios_disponiveis:
+                    for horario in horarios_para_select:
                         data_hora = datetime.combine(data_consulta, horario)
                         cur = conn.cursor()
                         cur.execute(
