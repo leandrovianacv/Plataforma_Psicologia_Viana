@@ -19,6 +19,36 @@ def converter_numpy_para_python(valor):
     else:
         return valor
 
+# FUNÇÃO PARA BLOQUEAR HORÁRIOS DE AULA
+def eh_horario_de_aula(data_consulta, hora_consulta):
+    """
+    Verifica se o horário específico é de aula
+    Retorna True se for horário de aula (deve ser bloqueado)
+    """
+    dia_semana = data_consulta.weekday()  # 0=Segunda, 1=Terça, 2=Quarta, 3=Quinta, 4=Sexta
+    
+    # SEGUNDA-FEIRA: 14:00 às 20:00
+    if dia_semana == 0:
+        if hora_consulta >= time(14, 0) and hora_consulta <= time(20, 0):
+            return True
+    
+    # TERÇA-FEIRA: 9:30 às 11:10
+    elif dia_semana == 1:
+        if hora_consulta >= time(9, 30) and hora_consulta <= time(11, 10):
+            return True
+    
+    # QUINTA-FEIRA: 14:00 às 18:00
+    elif dia_semana == 3:
+        if hora_consulta >= time(14, 0) and hora_consulta <= time(18, 0):
+            return True
+    
+    # SEXTA-FEIRA: 7:30 às 9:30
+    elif dia_semana == 4:
+        if hora_consulta >= time(7, 30) and hora_consulta <= time(9, 30):
+            return True
+    
+    return False
+
 # Configuração da página
 st.set_page_config(
     page_title="Atendimento Viana - Psicologia", 
@@ -119,6 +149,17 @@ if inicializar_banco():
 else:
     st.sidebar.error("❌ Falha na conexão com Supabase")
 
+# Mostrar horários de aula no sidebar
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 📚 Horários de Aula (BLOQUEADOS)")
+st.sidebar.info(
+    "**Horários bloqueados:**\n"
+    "• Segunda: 14:00 às 20:00\n"
+    "• Terça: 9:30 às 11:10\n"
+    "• Quinta: 14:00 às 18:00\n"
+    "• Sexta: 7:30 às 9:30"
+)
+
 # HEADER PERSONALIZADO
 st.markdown("<h1 style='text-align: center; color: #1f77b4;'>🧠 PSICARE BY BELINDA VIANA</h1>", unsafe_allow_html=True)
 st.markdown("---")
@@ -194,7 +235,7 @@ if menu == "➕ Cadastrar Paciente":
             else:
                 st.error("❌ Preencha os campos obrigatórios: Nome Completo e Telefone")
 
-# 2. MARCAR CONSULTA - SEM NENHUM FILTRO DE HORÁRIO
+# 2. MARCAR CONSULTA - COM BLOQUEIO DE HORÁRIOS DE AULA
 elif menu == "📅 Marcar Consulta":
     st.header("📅 Marcar Nova Consulta")
     
@@ -224,9 +265,17 @@ elif menu == "📅 Marcar Consulta":
                                 continue
                             todos_horarios.append(time(hora, minuto))
                     
-                    # REMOVER APENAS HORÁRIOS JÁ OCUPADOS
-                    horarios_livres = []
+                    # FILTRAR HORÁRIOS:
+                    # 1. Remover horários de aula
+                    # 2. Remover horários já ocupados
+                    horarios_disponiveis = []
+                    
                     for horario in todos_horarios:
+                        # Verificar se é horário de aula
+                        if eh_horario_de_aula(data_consulta, horario):
+                            continue
+                        
+                        # Verificar se já está ocupado
                         data_hora = datetime.combine(data_consulta, horario)
                         cur = conn.cursor()
                         cur.execute(
@@ -234,15 +283,18 @@ elif menu == "📅 Marcar Consulta":
                             (data_hora,)
                         )
                         if cur.fetchone() is None:
-                            horarios_livres.append(horario)
+                            horarios_disponiveis.append(horario)
                     
-                    # MOSTRAR SELECTBOX COM TODOS OS HORÁRIOS
-                    if horarios_livres:
+                    # MOSTRAR SELECTBOX COM HORÁRIOS DISPONÍVEIS
+                    if horarios_disponiveis:
                         hora_consulta = st.selectbox(
                             "Horário*", 
-                            horarios_livres,
+                            horarios_disponiveis,
                             format_func=lambda x: x.strftime('%H:%M')
                         )
+                        
+                        # Mostrar quantos horários disponíveis
+                        st.caption(f"📊 {len(horarios_disponiveis)} horários disponíveis")
                     else:
                         st.error("❌ Não há horários disponíveis para esta data!")
                         hora_consulta = None
@@ -263,6 +315,11 @@ elif menu == "📅 Marcar Consulta":
                     if hora_consulta is None:
                         st.error("❌ Selecione um horário válido!")
                     else:
+                        # Verificar se é horário de aula (segurança)
+                        if eh_horario_de_aula(data_consulta, hora_consulta):
+                            st.error("❌ Este é um horário de aula! Escolha outro horário.")
+                            st.stop()
+                        
                         data_hora = datetime.combine(data_consulta, hora_consulta)
                         
                         # Verificar se horário está ocupado (segurança)
