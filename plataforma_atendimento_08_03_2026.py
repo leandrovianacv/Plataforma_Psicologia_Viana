@@ -7,7 +7,7 @@ import numpy as np
 import warnings
 warnings.filterwarnings('ignore')
 
-# CORREÇÃO 1: Função para converter numpy.int64
+# Função para converter numpy.int64
 def converter_numpy_para_python(valor):
     """Converte tipos numpy para tipos Python nativos"""
     if isinstance(valor, (np.integer, np.int64)):
@@ -19,42 +19,6 @@ def converter_numpy_para_python(valor):
     else:
         return valor
 
-# CORREÇÃO 2: Função para verificar horários de aula (Cabo Verde - UTC-1)
-def eh_horario_de_aula(data_consulta, hora_consulta):
-    """
-    Verifica se o horário específico é de aula (Cabo Verde)
-    Retorna True se for horário de aula, False caso contrário
-    """
-    dia_semana = data_consulta.weekday()  # 0=Segunda, 1=Terça, 2=Quarta, 3=Quinta, 4=Sexta
-    
-    # Converter hora para minutos
-    minutos = hora_consulta.hour * 60 + hora_consulta.minute
-    
-    # SEGUNDA-FEIRA: 14:00 às 20:00 (bloquear TODOS os horários neste intervalo)
-    if dia_semana == 0:
-        if minutos >= 14*60 and minutos < 20*60:  # 14:00 até 19:59
-            return True
-        # Bloquear também 20:00 exato se existir
-        if minutos == 20*60:
-            return True
-    
-    # TERÇA-FEIRA: 9:30 às 11:10
-    elif dia_semana == 1:
-        if minutos >= 9*60+30 and minutos <= 11*60+10:  # 9:30 até 11:10
-            return True
-    
-    # QUINTA-FEIRA: 14:00 às 18:00
-    elif dia_semana == 3:
-        if minutos >= 14*60 and minutos < 18*60:  # 14:00 até 17:59
-            return True
-    
-    # SEXTA-FEIRA: 7:30 às 9:30
-    elif dia_semana == 4:
-        if minutos >= 7*60+30 and minutos < 9*60+30:  # 7:30 até 9:29
-            return True
-    
-    return False
-
 # Configuração da página
 st.set_page_config(
     page_title="Atendimento Viana - Psicologia", 
@@ -62,9 +26,9 @@ st.set_page_config(
     layout="wide"
 )
 
-# Conexão com Supabase (via Session Pooler) - VERSÃO SEGURA
+# Conexão com Supabase (via Session Pooler)
 def conectar_banco():
-    """Conecta ao Supabase usando Session Pooler - APENAS via secrets"""
+    """Conecta ao Supabase usando Session Pooler"""
     try:
         if "DB_URL" in st.secrets:
             db_url = st.secrets["DB_URL"]
@@ -119,7 +83,7 @@ def inicializar_banco():
                 data_nascimento DATE,
                 profissao VARCHAR(50),
                 como_chegou VARCHAR(50),
-                queixa_principal TEXT NOT NULL,
+                queixa_principal TEXT,
                 medicacoes_atuais TEXT,
                 observacoes_iniciais TEXT,
                 ativo BOOLEAN DEFAULT TRUE,
@@ -155,26 +119,6 @@ if inicializar_banco():
 else:
     st.sidebar.error("❌ Falha na conexão com Supabase")
 
-# Função para obter hora atual de Cabo Verde (UTC-1)
-def hora_cv_agora():
-    """Retorna a data e hora atual em Cabo Verde (UTC-1)"""
-    utc_agora = datetime.utcnow()
-    cv_agora = utc_agora - timedelta(hours=1)  # Cabo Verde é UTC-1
-    return cv_agora
-
-# Informações de horários no sidebar
-st.sidebar.markdown("---")
-st.sidebar.markdown("### 📚 Horários de Aula (Cabo Verde)")
-st.sidebar.info(
-    "**Horários bloqueados:**\n"
-    "• Segunda: 14:00 às 20:00\n"
-    "• Terça: 9:30 às 11:10\n"
-    "• Quinta: 14:00 às 18:00\n"
-    "• Sexta: 7:30 às 9:30\n\n"
-    f"**Hora atual em CV:**\n"
-    f"{hora_cv_agora().strftime('%d/%m/%Y %H:%M')}"
-)
-
 # HEADER PERSONALIZADO
 st.markdown("<h1 style='text-align: center; color: #1f77b4;'>🧠 PSICARE BY BELINDA VIANA</h1>", unsafe_allow_html=True)
 st.markdown("---")
@@ -205,9 +149,9 @@ if menu == "➕ Cadastrar Paciente":
             # Data de nascimento desde 1930
             data_nascimento = st.date_input(
                 "Data de Nascimento", 
-                min_value=date(1930, 1, 1),  # Permite anos desde 1930
+                min_value=date(1930, 1, 1),
                 max_value=date.today(),
-                value=None,  # Sem valor padrão
+                value=None,
                 format="DD/MM/YYYY"
             )
             
@@ -215,8 +159,8 @@ if menu == "➕ Cadastrar Paciente":
             profissao = st.text_input("Profissão", placeholder="Profissão atual")
             como_chegou = st.selectbox("Como chegou até nós", 
                                      ["Indicação", "Internet", "Redes Sociais", "Outro"])
-            queixa_principal = st.text_area("Queixa Principal*", 
-                                          placeholder="Descreva a queixa principal...", 
+            queixa_principal = st.text_area("Queixa Principal", 
+                                          placeholder="Descreva a queixa principal (opcional)...", 
                                           height=100)
         
         medicacoes = st.text_input("Medicações Atuais", placeholder="Medicações em uso")
@@ -224,8 +168,10 @@ if menu == "➕ Cadastrar Paciente":
                                  placeholder="Observações relevantes...",
                                  height=80)
         
+        st.caption("* Campos obrigatórios: Nome Completo e Telefone")
+        
         if st.form_submit_button("💾 Salvar Paciente"):
-            if nome and telefone and queixa_principal:
+            if nome and telefone:
                 try:
                     conn = conectar_banco()
                     cur = conn.cursor()
@@ -246,9 +192,9 @@ if menu == "➕ Cadastrar Paciente":
                     if conn:
                         conn.close()
             else:
-                st.error("❌ Preencha os campos obrigatórios (*)")
+                st.error("❌ Preencha os campos obrigatórios: Nome Completo e Telefone")
 
-# 2. MARCAR CONSULTA - CORRIGIDO (bloqueio de horários de aula)
+# 2. MARCAR CONSULTA - SEM NENHUM BLOQUEIO DE HORÁRIOS
 elif menu == "📅 Marcar Consulta":
     st.header("📅 Marcar Nova Consulta")
     
@@ -270,41 +216,29 @@ elif menu == "📅 Marcar Consulta":
                     paciente_nome = st.selectbox("Paciente*", pacientes_df['nome_completo'])
                     data_consulta = st.date_input("Data*", min_value=date.today())
                     
-                    # CORREÇÃO: Gerar horários de 30 em 30 minutos
+                    # GERAR TODOS OS HORÁRIOS POSSÍVEIS (8h às 20h)
                     todos_horarios = []
-                    for hora in range(8, 21):  # 8h às 20h
+                    for hora in range(8, 21):
                         for minuto in [0, 30]:
                             if hora == 20 and minuto > 0:
                                 continue
-                            horario = time(hora, minuto)
-                            todos_horarios.append(horario)
+                            todos_horarios.append(time(hora, minuto))
                     
-                    # Filtrar apenas horários que NÃO são de aula
+                    # REMOVER APENAS HORÁRIOS JÁ OCUPADOS
                     horarios_disponiveis = []
-                    horarios_bloqueados = []
                     
                     for horario in todos_horarios:
-                        if eh_horario_de_aula(data_consulta, horario):
-                            horarios_bloqueados.append(horario)
-                            # DEBUG: print para verificar quais estão sendo bloqueados
-                            print(f"BLOQUEADO: {data_consulta} - {horario.strftime('%H:%M')}")
-                        else:
+                        # Verificar se já está ocupado
+                        data_hora = datetime.combine(data_consulta, horario)
+                        cur = conn.cursor()
+                        cur.execute(
+                            "SELECT id FROM consultas WHERE data_consulta = %s AND status IN ('agendada', 'realizada')",
+                            (data_hora,)
+                        )
+                        if cur.fetchone() is None:
                             horarios_disponiveis.append(horario)
                     
-                    # Mostrar contagem de horários bloqueados
-                    dia_semana = data_consulta.weekday()
-                    
-                    # Mensagens específicas por dia
-                    if dia_semana == 0:
-                        st.warning(f"⚠️ Segunda-feira: {len(horarios_bloqueados)} horários bloqueados (14:00-20:00)")
-                    elif dia_semana == 1:
-                        st.warning(f"⚠️ Terça-feira: {len(horarios_bloqueados)} horários bloqueados (9:30-11:10)")
-                    elif dia_semana == 3:
-                        st.warning(f"⚠️ Quinta-feira: {len(horarios_bloqueados)} horários bloqueados (14:00-18:00)")
-                    elif dia_semana == 4:
-                        st.warning(f"⚠️ Sexta-feira: {len(horarios_bloqueados)} horários bloqueados (7:30-9:30)")
-                    
-                    # Mostrar lista de horários disponíveis (APENAS os que não são de aula)
+                    # MOSTRAR SELECTBOX COM TODOS OS HORÁRIOS DISPONÍVEIS
                     if horarios_disponiveis:
                         hora_consulta = st.selectbox(
                             "Horário*", 
@@ -312,15 +246,13 @@ elif menu == "📅 Marcar Consulta":
                             format_func=lambda x: x.strftime('%H:%M')
                         )
                         
-                        # Mostrar horários bloqueados em texto menor (opcional)
-                        if horarios_bloqueados:
-                            horarios_bloq_str = ", ".join([h.strftime('%H:%M') for h in horarios_bloqueados])
-                            st.caption(f"🚫 Horários de aula bloqueados: {horarios_bloq_str}")
+                        # Mostrar quantidade de horários disponíveis
+                        st.caption(f"📊 {len(horarios_disponiveis)} horários disponíveis")
                     else:
                         st.error("❌ Não há horários disponíveis para esta data!")
                         hora_consulta = None
                 
-                with col2: 
+                with col2:
                     primeira_consulta = st.checkbox("Primeira Consulta", value=True)
                     valor_consulta = st.number_input("Valor da Consulta (CVE)", 
                                                    min_value=0.0, 
@@ -336,15 +268,9 @@ elif menu == "📅 Marcar Consulta":
                     if hora_consulta is None:
                         st.error("❌ Selecione um horário válido!")
                     else:
-                        # Verificação final
-                        if eh_horario_de_aula(data_consulta, hora_consulta):
-                            st.error("❌ Este é um horário de aula! Escolha outro horário.")
-                            st.stop()
-                        
                         data_hora = datetime.combine(data_consulta, hora_consulta)
                         
-                        # Verificar se horário já está ocupado
-                        cur = conn.cursor()
+                        # Verificar se horário está ocupado (segurança)
                         cur.execute(
                             "SELECT id FROM consultas WHERE data_consulta = %s AND status IN ('agendada', 'realizada')",
                             (data_hora,)
@@ -367,7 +293,7 @@ elif menu == "📅 Marcar Consulta":
                              forma_pagamento, observacoes)
                         )
                         conn.commit()
-                        st.success(f"✅ Consulta marcada para {data_consulta.strftime('%d/%m/%Y')} às {hora_consulta.strftime('%H:%M')} (CVT)")
+                        st.success(f"✅ Consulta marcada para {data_consulta.strftime('%d/%m/%Y')} às {hora_consulta.strftime('%H:%M')}")
                         st.balloons()
                     
     except Exception as e:
@@ -387,9 +313,14 @@ elif menu == "👥 Ver Pacientes":
             st.stop()
             
         pacientes_df = pd.read_sql("""
-            SELECT id, nome_completo, telefone, email, profissao, queixa_principal, 
-                   TO_CHAR(data_cadastro, 'DD/MM/YYYY') as data_cadastro,
-                   TO_CHAR(data_nascimento, 'DD/MM/YYYY') as data_nascimento
+            SELECT 
+                nome_completo as "Nome",
+                telefone as "Telefone",
+                email as "Email",
+                profissao as "Profissão",
+                TO_CHAR(data_nascimento, 'DD/MM/YYYY') as "Nascimento",
+                queixa_principal as "Queixa Principal",
+                TO_CHAR(data_cadastro, 'DD/MM/YYYY') as "Cadastro"
             FROM pacientes 
             WHERE ativo = TRUE
             ORDER BY nome_completo
@@ -398,22 +329,20 @@ elif menu == "👥 Ver Pacientes":
         if not pacientes_df.empty:
             st.dataframe(pacientes_df, use_container_width=True)
             
-            col1, col2, col3 = st.columns(3)
+            col1, col2 = st.columns(2)
             with col1:
                 st.metric("Total de Pacientes", len(pacientes_df))
             with col2:
                 from datetime import datetime
                 primeiro_dia_mes = datetime.now().replace(day=1)
-                
                 cadastros_mes = 0
-                for data_str in pacientes_df['data_cadastro']:
+                for data_str in pacientes_df['Cadastro']:
                     try:
                         data_obj = datetime.strptime(data_str, '%d/%m/%Y')
                         if data_obj >= primeiro_dia_mes:
                             cadastros_mes += 1
                     except:
                         pass
-                
                 st.metric("Cadastros este Mês", cadastros_mes)
         else:
             st.info("📝 Nenhum paciente cadastrado")
@@ -424,11 +353,11 @@ elif menu == "👥 Ver Pacientes":
         if 'conn' in locals() and conn:
             conn.close()
 
-# 4. AGENDA DA SEMANA  
+# 4. AGENDA DA SEMANA - COM OPÇÃO DE CANCELAR
 elif menu == "🗓️ Agenda da Semana":
     st.header("🗓️ Agenda de Consultas")
     
-    opcao_agenda = st.radio("Visualizar:", ["Dia Específico", "Próximos 7 Dias"], horizontal=True)
+    opcao_agenda = st.radio("Visualizar:", ["Hoje", "Amanhã", "Próximos 7 Dias"], horizontal=True)
     
     try:
         conn = conectar_banco()
@@ -436,57 +365,114 @@ elif menu == "🗓️ Agenda da Semana":
             st.error("❌ Não foi possível conectar ao banco de dados")
             st.stop()
             
-        if opcao_agenda == "Dia Específico":
-            data_selecionada = st.date_input("Selecione a data:", value=date.today())
-            
+        if opcao_agenda == "Hoje":
             agenda_df = pd.read_sql("""
-                SELECT p.nome_completo, c.data_consulta, 
+                SELECT c.id, p.nome_completo, c.data_consulta, 
                        CASE WHEN c.primeira_consulta THEN 'Primeira' ELSE 'Retorno' END as tipo,
                        c.status, c.valor_consulta,
                        c.forma_pagamento
                 FROM consultas c
                 JOIN pacientes p ON c.paciente_id = p.id
-                WHERE DATE(c.data_consulta) = %s
+                WHERE DATE(c.data_consulta) = CURRENT_DATE
                 ORDER BY c.data_consulta
-            """, conn, params=(data_selecionada,))
+            """, conn)
+        elif opcao_agenda == "Amanhã":
+            agenda_df = pd.read_sql("""
+                SELECT c.id, p.nome_completo, c.data_consulta, 
+                       CASE WHEN c.primeira_consulta THEN 'Primeira' ELSE 'Retorno' END as tipo,
+                       c.status, c.valor_consulta,
+                       c.forma_pagamento
+                FROM consultas c
+                JOIN pacientes p ON c.paciente_id = p.id
+                WHERE DATE(c.data_consulta) = CURRENT_DATE + INTERVAL '1 day'
+                ORDER BY c.data_consulta
+            """, conn)
         else:
             agenda_df = pd.read_sql("""
-                SELECT p.nome_completo, c.data_consulta, 
+                SELECT c.id, p.nome_completo, c.data_consulta, 
                        CASE WHEN c.primeira_consulta THEN 'Primeira' ELSE 'Retorno' END as tipo,
                        c.status, c.valor_consulta,
                        c.forma_pagamento
                 FROM consultas c
                 JOIN pacientes p ON c.paciente_id = p.id
-                WHERE c.data_consulta BETWEEN NOW() AND NOW() + INTERVAL '7 days'
+                WHERE c.data_consulta BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'
                 ORDER BY c.data_consulta
             """, conn)
         
         if not agenda_df.empty:
+            # Criar colunas para os cabeçalhos
+            col_header1, col_header2, col_header3, col_header4, col_header5 = st.columns([3, 1, 1, 1, 1])
+            with col_header1:
+                st.markdown("**Paciente**")
+            with col_header2:
+                st.markdown("**Horário**")
+            with col_header3:
+                st.markdown("**Tipo**")
+            with col_header4:
+                st.markdown("**Status**")
+            with col_header5:
+                st.markdown("**Ações**")
+            
+            st.divider()
+            
             for _, row in agenda_df.iterrows():
                 with st.container():
-                    col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
+                    col1, col2, col3, col4, col5 = st.columns([3, 1, 1, 1, 1])
+                    
                     with col1:
                         st.write(f"**{row['nome_completo']}**")
+                    
                     with col2:
                         st.write(f"🕐 {row['data_consulta'].strftime('%H:%M')}")
-                        st.write(f"📝 {row['tipo']}")
+                    
                     with col3:
+                        st.write(f"📝 {row['tipo']}")
+                    
+                    with col4:
                         status_color = {
                             'agendada': 'blue',
                             'realizada': 'green', 
                             'cancelada': 'red',
                             'falta': 'orange'
                         }.get(row['status'], 'gray')
-                        st.markdown(f"**Status:** <span style='color:{status_color}'>{row['status'].title()}</span>", 
+                        st.markdown(f"<span style='color:{status_color}'>{row['status'].title()}</span>", 
                                   unsafe_allow_html=True)
-                    with col4:
-                        valor = converter_numpy_para_python(row['valor_consulta'])
-                        st.write(f"**{valor:,.0f} CVE**")
+                    
+                    with col5:
+                        # Só mostrar botão de cancelar se a consulta estiver agendada
+                        if row['status'] == 'agendada':
+                            consulta_id = converter_numpy_para_python(row['id'])
+                            if st.button(f"❌ Cancelar", key=f"cancel_{consulta_id}", use_container_width=True):
+                                try:
+                                    cur = conn.cursor()
+                                    cur.execute("UPDATE consultas SET status = 'cancelada' WHERE id = %s", (consulta_id,))
+                                    conn.commit()
+                                    st.success(f"✅ Consulta cancelada com sucesso!")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Erro ao cancelar: {e}")
+                        else:
+                            st.write("—")
+                    
+                    # Mostrar valor em linha separada
+                    st.caption(f"💰 {converter_numpy_para_python(row['valor_consulta']):,.0f} CVE")
                     st.divider()
                     
+            # Estatísticas no final
             total_consultas = len(agenda_df)
             realizadas = len(agenda_df[agenda_df['status'] == 'realizada'])
-            st.metric("Total de Consultas", total_consultas, f"{realizadas} realizadas")
+            faltas = len(agenda_df[agenda_df['status'] == 'falta'])
+            canceladas = len(agenda_df[agenda_df['status'] == 'cancelada'])
+            
+            col_res1, col_res2, col_res3, col_res4 = st.columns(4)
+            with col_res1:
+                st.metric("Total", total_consultas)
+            with col_res2:
+                st.metric("Realizadas", realizadas)
+            with col_res3:
+                st.metric("Faltas", faltas)
+            with col_res4:
+                st.metric("Canceladas", canceladas)
         else:
             st.info("📅 Nenhuma consulta agendada para o período selecionado")
             
@@ -508,30 +494,31 @@ elif menu == "✅ Registrar Consulta Realizada":
             
         consultas_df = pd.read_sql("""
             SELECT c.id, p.nome_completo, c.data_consulta, c.valor_consulta,
-                   c.pagamento_realizado
+                   c.pagamento_realizado, c.status
             FROM consultas c
             JOIN pacientes p ON c.paciente_id = p.id
-            WHERE c.status = 'agendada' AND c.data_consulta <= NOW() + INTERVAL '1 hour'
+            WHERE c.status = 'agendada' AND c.data_consulta <= CURRENT_DATE + INTERVAL '1 day'
             ORDER BY c.data_consulta
         """, conn)
         
         if not consultas_df.empty:
-            consultas_df['display'] = consultas_df['nome_completo'] + " - " + consultas_df['data_consulta'].dt.strftime('%d/%m %H:%M')
-            consulta_selecionada = st.selectbox("Selecionar Consulta:", consultas_df['display'])
+            consultas_df['display'] = consultas_df['nome_completo'] + " - " + consultas_df['data_consulta'].dt.strftime('%d/%m/%Y %H:%M')
+            consulta_selecionada = st.selectbox("Selecione a consulta:", consultas_df['display'])
             
             consulta_info = consultas_df[consultas_df['display'] == consulta_selecionada].iloc[0]
             
             st.info(f"""
             **Detalhes da Consulta:**
             - **Paciente:** {consulta_info['nome_completo']}
-            - **Data/Hora:** {consulta_info['data_consulta'].strftime('%d/%m/%Y %H:%M')} (CVT)
+            - **Data/Hora:** {consulta_info['data_consulta'].strftime('%d/%m/%Y %H:%M')}
             - **Valor:** {converter_numpy_para_python(consulta_info['valor_consulta']):,.0f} CVE
             - **Pagamento:** {'✅ Pago' if consulta_info['pagamento_realizado'] else '⏳ Pendente'}
             """)
             
-            col1, col2 = st.columns(2)
+            col1, col2, col3 = st.columns(3)
+            
             with col1:
-                if st.button("✅ Marcar como Realizada", type="primary"):
+                if st.button("✅ Realizada", type="primary", use_container_width=True):
                     consulta_id = converter_numpy_para_python(consulta_info['id'])
                     
                     cur = conn.cursor()
@@ -541,8 +528,18 @@ elif menu == "✅ Registrar Consulta Realizada":
                     st.rerun()
             
             with col2:
-                if not consulta_info['pagamento_realizado']:
-                    if st.button("💰 Registrar Pagamento"):
+                if st.button("❌ Não compareceu", type="secondary", use_container_width=True):
+                    consulta_id = converter_numpy_para_python(consulta_info['id'])
+                    
+                    cur = conn.cursor()
+                    cur.execute("UPDATE consultas SET status = 'falta' WHERE id = %s", (consulta_id,))
+                    conn.commit()
+                    st.warning("⚠️ Consulta registrada como falta (paciente não compareceu)")
+                    st.rerun()
+            
+            with col3:
+                if not consulta_info['pagamento_realizado'] and consulta_info['status'] == 'realizada':
+                    if st.button("💰 Pagamento", use_container_width=True):
                         consulta_id = converter_numpy_para_python(consulta_info['id'])
                         
                         cur = conn.cursor()
@@ -550,6 +547,8 @@ elif menu == "✅ Registrar Consulta Realizada":
                         conn.commit()
                         st.success("💰 Pagamento registrado com sucesso!")
                         st.rerun()
+                else:
+                    st.button("💰 Pagamento", disabled=True, use_container_width=True)
         else:
             st.info("📝 Nenhuma consulta agendada para registrar")
             
@@ -579,7 +578,7 @@ elif menu == "📊 Estatísticas":
             consultas_mes = pd.read_sql("""
                 SELECT COUNT(*) as total 
                 FROM consultas 
-                WHERE EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM NOW())
+                WHERE EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM CURRENT_DATE)
             """, conn)
             st.metric("Consultas este Mês", converter_numpy_para_python(consultas_mes.iloc[0]['total']))
         
@@ -588,7 +587,7 @@ elif menu == "📊 Estatísticas":
                 SELECT COALESCE(SUM(valor_consulta), 0) as total 
                 FROM consultas 
                 WHERE status = 'realizada' 
-                AND EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM NOW())
+                AND EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM CURRENT_DATE)
             """, conn)
             receita_valor = converter_numpy_para_python(receita_mes.iloc[0]['total'])
             st.metric("Receita do Mês (CVE)", f"{receita_valor:,.0f}")
@@ -601,7 +600,7 @@ elif menu == "📊 Estatísticas":
                         1
                     ) as taxa
                 FROM consultas 
-                WHERE EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM NOW())
+                WHERE EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM CURRENT_DATE)
             """, conn)
             taxa_valor = converter_numpy_para_python(taxa_falta.iloc[0]['taxa']) if not pd.isna(taxa_falta.iloc[0]['taxa']) else 0
             st.metric("Taxa de Faltas (%)", f"{taxa_valor}")
@@ -610,7 +609,7 @@ elif menu == "📊 Estatísticas":
         status_df = pd.read_sql("""
             SELECT status, COUNT(*) as quantidade
             FROM consultas
-            WHERE EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM NOW())
+            WHERE EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM CURRENT_DATE)
             GROUP BY status
         """, conn)
         
@@ -626,15 +625,13 @@ elif menu == "📊 Estatísticas":
         if 'conn' in locals() and conn:
             conn.close()
 
-# RODAPÉ PERSONALIZADO
+# RODAPÉ SIMPLES
 st.markdown("---")
 st.markdown(
     "<div style='text-align: center; color: #666; padding: 10px;'>"
     "🧠 <b>Psicare by Belinda Viana</b> - Consultório de Psicologia | "
     "📞 Contacto: +238 5949955 | "
-    "📧 Email: contato@atendimentoviana.cv | "
-    "🌐 www.atendimentoviana.cv<br>"
-    "<small>📍 Cabo Verde (UTC-1) | Hora atual: {} | ✅ Horários de aula bloqueados</small>"
-    "</div>".format(hora_cv_agora().strftime('%H:%M')), 
+    "📧 Email: contato@atendimentoviana.cv"
+    "</div>", 
     unsafe_allow_html=True
 )
