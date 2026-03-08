@@ -287,7 +287,7 @@ elif menu == "📅 Marcar Consulta":
                         if cur.fetchone() is None:
                             horarios_livres.append(horario)
                     
-                    # MOSTrar SELECTBOX
+                    # MOSTRAR SELECTBOX
                     if horarios_livres:
                         hora_consulta = st.selectbox(
                             "Horário*", 
