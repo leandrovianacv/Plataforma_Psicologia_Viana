@@ -161,19 +161,6 @@ if inicializar_banco():
 else:
     st.sidebar.error("❌ Falha na conexão com Supabase")
 
-# Informações de horários NO SIDEBAR (APENAS AQUI - NÃO APARECE NO LAYOUT PRINCIPAL)
-st.sidebar.markdown("---")
-st.sidebar.markdown("### 📚 Horários de Aula")
-st.sidebar.info(
-    "**Horários bloqueados:**\n"
-    "• Segunda: 14:00 às 20:00\n"
-    "• Terça: 9:30 às 11:10\n"
-    "• Quinta: 14:00 às 18:00\n"
-    "• Sexta: 7:30 às 9:30\n\n"
-    f"**Hora atual em CV:**\n"
-    f"{hora_cv_agora().strftime('%d/%m/%Y %H:%M')}"
-)
-
 # HEADER PERSONALIZADO
 st.markdown("<h1 style='text-align: center; color: #1f77b4;'>🧠 PSICARE BY BELINDA VIANA</h1>", unsafe_allow_html=True)
 st.markdown("---")
@@ -249,7 +236,7 @@ if menu == "➕ Cadastrar Paciente":
             else:
                 st.error("❌ Preencha os campos obrigatórios: Nome Completo e Telefone")
 
-# 2. MARCAR CONSULTA
+# 2. MARCAR CONSULTA - CORRIGIDO (sem nenhuma informação de horários no layout)
 elif menu == "📅 Marcar Consulta":
     st.header("📅 Marcar Nova Consulta")
     
@@ -276,36 +263,35 @@ elif menu == "📅 Marcar Consulta":
                     data_atual_cv = agora_cv.date()
                     hora_atual_cv = agora_cv.time()
                     
-                    # Gerar horários de 30 em 30 minutos
+                    # Gerar horários de 30 em 30 minutos (8h às 20h)
                     todos_horarios = []
-                    for hora in range(8, 21):  # 8h às 20h
+                    for hora in range(8, 21):
                         for minuto in [0, 30]:
                             if hora == 20 and minuto > 0:
                                 continue
                             horario = time(hora, minuto)
                             todos_horarios.append(horario)
                     
-                    # Filtrar horários:
-                    # 1. Remover horários de aula
-                    # 2. Se for hoje, remover horários que já passaram (silenciosamente)
-                    horarios_validos = []
+                    # Filtrar horários disponíveis:
+                    horarios_disponiveis = []
                     
                     for horario in todos_horarios:
-                        # Verificar se é horário de aula
+                        # 1. Remover horários de aula (para qualquer dia)
                         if eh_horario_de_aula(data_consulta, horario):
                             continue
                         
-                        # Se for hoje, verificar se horário já passou
+                        # 2. Se for HOJE, remover horários que já passaram
                         if data_consulta == data_atual_cv:
                             if horario <= hora_atual_cv:
                                 continue
                         
-                        horarios_validos.append(horario)
+                        # 3. Se for AMANHÃ ou futuro, manter todos os horários (exceto aulas)
+                        horarios_disponiveis.append(horario)
                     
                     # Verificar horários já ocupados no banco
                     horarios_livres = []
                     
-                    for horario in horarios_validos:
+                    for horario in horarios_disponiveis:
                         data_hora = datetime.combine(data_consulta, horario)
                         cur = conn.cursor()
                         cur.execute(
@@ -315,7 +301,7 @@ elif menu == "📅 Marcar Consulta":
                         if cur.fetchone() is None:
                             horarios_livres.append(horario)
                     
-                    # Mostrar lista de horários disponíveis (sem mensagens adicionais)
+                    # Mostrar lista de horários disponíveis (apenas o selectbox, sem mensagens)
                     if horarios_livres:
                         hora_consulta = st.selectbox(
                             "Horário*", 
@@ -347,7 +333,7 @@ elif menu == "📅 Marcar Consulta":
                             st.error("❌ Este é um horário de aula! Escolha outro horário.")
                             st.stop()
                         
-                        # Verificar se é horário passado (para hoje)
+                        # Verificar se é horário passado (apenas para hoje)
                         if data_consulta == data_atual_cv and hora_consulta <= hora_atual_cv:
                             st.error("❌ Não é possível marcar consultas em horários que já passaram!")
                             st.stop()
@@ -419,7 +405,6 @@ elif menu == "👥 Ver Pacientes":
             with col2:
                 from datetime import datetime
                 primeiro_dia_mes = datetime.now().replace(day=1)
-                # Converter para string para comparação simples
                 cadastros_mes = 0
                 for data_str in pacientes_df['Cadastro']:
                     try:
@@ -710,7 +695,7 @@ elif menu == "📊 Estatísticas":
         if 'conn' in locals() and conn:
             conn.close()
 
-# RODAPÉ SIMPLES (SEM informações de horários)
+# RODAPÉ SIMPLES
 st.markdown("---")
 st.markdown(
     "<div style='text-align: center; color: #666; padding: 10px;'>"
