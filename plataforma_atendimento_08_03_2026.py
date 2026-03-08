@@ -161,7 +161,7 @@ if inicializar_banco():
 else:
     st.sidebar.error("❌ Falha na conexão com Supabase")
 
-# Informações de horários NO SIDEBAR (APENAS AQUI)
+# Informações de horários NO SIDEBAR (APENAS AQUI - NÃO APARECE NO LAYOUT PRINCIPAL)
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 📚 Horários de Aula")
 st.sidebar.info(
@@ -249,7 +249,7 @@ if menu == "➕ Cadastrar Paciente":
             else:
                 st.error("❌ Preencha os campos obrigatórios: Nome Completo e Telefone")
 
-# 2. MARCAR CONSULTA - CORRIGIDO (sem mensagens no layout principal)
+# 2. MARCAR CONSULTA
 elif menu == "📅 Marcar Consulta":
     st.header("📅 Marcar Nova Consulta")
     
@@ -438,7 +438,7 @@ elif menu == "👥 Ver Pacientes":
         if 'conn' in locals() and conn:
             conn.close()
 
-# 4. AGENDA DA SEMANA  
+# 4. AGENDA DA SEMANA - COM OPÇÃO DE CANCELAR
 elif menu == "🗓️ Agenda da Semana":
     st.header("🗓️ Agenda de Consultas")
     
@@ -452,7 +452,7 @@ elif menu == "🗓️ Agenda da Semana":
             
         if opcao_agenda == "Hoje":
             agenda_df = pd.read_sql("""
-                SELECT p.nome_completo, c.data_consulta, 
+                SELECT c.id, p.nome_completo, c.data_consulta, 
                        CASE WHEN c.primeira_consulta THEN 'Primeira' ELSE 'Retorno' END as tipo,
                        c.status, c.valor_consulta,
                        c.forma_pagamento
@@ -463,7 +463,7 @@ elif menu == "🗓️ Agenda da Semana":
             """, conn)
         elif opcao_agenda == "Amanhã":
             agenda_df = pd.read_sql("""
-                SELECT p.nome_completo, c.data_consulta, 
+                SELECT c.id, p.nome_completo, c.data_consulta, 
                        CASE WHEN c.primeira_consulta THEN 'Primeira' ELSE 'Retorno' END as tipo,
                        c.status, c.valor_consulta,
                        c.forma_pagamento
@@ -474,7 +474,7 @@ elif menu == "🗓️ Agenda da Semana":
             """, conn)
         else:
             agenda_df = pd.read_sql("""
-                SELECT p.nome_completo, c.data_consulta, 
+                SELECT c.id, p.nome_completo, c.data_consulta, 
                        CASE WHEN c.primeira_consulta THEN 'Primeira' ELSE 'Retorno' END as tipo,
                        c.status, c.valor_consulta,
                        c.forma_pagamento
@@ -485,32 +485,79 @@ elif menu == "🗓️ Agenda da Semana":
             """, conn)
         
         if not agenda_df.empty:
+            # Criar colunas para os cabeçalhos
+            col_header1, col_header2, col_header3, col_header4, col_header5 = st.columns([3, 1, 1, 1, 1])
+            with col_header1:
+                st.markdown("**Paciente**")
+            with col_header2:
+                st.markdown("**Horário**")
+            with col_header3:
+                st.markdown("**Tipo**")
+            with col_header4:
+                st.markdown("**Status**")
+            with col_header5:
+                st.markdown("**Ações**")
+            
+            st.divider()
+            
             for _, row in agenda_df.iterrows():
                 with st.container():
-                    col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
+                    col1, col2, col3, col4, col5 = st.columns([3, 1, 1, 1, 1])
+                    
                     with col1:
                         st.write(f"**{row['nome_completo']}**")
+                    
                     with col2:
                         st.write(f"🕐 {row['data_consulta'].strftime('%H:%M')}")
-                        st.write(f"📝 {row['tipo']}")
+                    
                     with col3:
+                        st.write(f"📝 {row['tipo']}")
+                    
+                    with col4:
                         status_color = {
                             'agendada': 'blue',
                             'realizada': 'green', 
                             'cancelada': 'red',
                             'falta': 'orange'
                         }.get(row['status'], 'gray')
-                        st.markdown(f"**Status:** <span style='color:{status_color}'>{row['status'].title()}</span>", 
+                        st.markdown(f"<span style='color:{status_color}'>{row['status'].title()}</span>", 
                                   unsafe_allow_html=True)
-                    with col4:
-                        valor = converter_numpy_para_python(row['valor_consulta'])
-                        st.write(f"**{valor:,.0f} CVE**")
+                    
+                    with col5:
+                        # Só mostrar botão de cancelar se a consulta estiver agendada
+                        if row['status'] == 'agendada':
+                            consulta_id = converter_numpy_para_python(row['id'])
+                            if st.button(f"❌ Cancelar", key=f"cancel_{consulta_id}", use_container_width=True):
+                                try:
+                                    cur = conn.cursor()
+                                    cur.execute("UPDATE consultas SET status = 'cancelada' WHERE id = %s", (consulta_id,))
+                                    conn.commit()
+                                    st.success(f"✅ Consulta cancelada com sucesso!")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Erro ao cancelar: {e}")
+                        else:
+                            st.write("—")
+                    
+                    # Mostrar valor em linha separada
+                    st.caption(f"💰 {converter_numpy_para_python(row['valor_consulta']):,.0f} CVE")
                     st.divider()
                     
+            # Estatísticas no final
             total_consultas = len(agenda_df)
             realizadas = len(agenda_df[agenda_df['status'] == 'realizada'])
             faltas = len(agenda_df[agenda_df['status'] == 'falta'])
-            st.metric("Total de Consultas", total_consultas, f"{realizadas} realizadas, {faltas} faltas")
+            canceladas = len(agenda_df[agenda_df['status'] == 'cancelada'])
+            
+            col_res1, col_res2, col_res3, col_res4 = st.columns(4)
+            with col_res1:
+                st.metric("Total", total_consultas)
+            with col_res2:
+                st.metric("Realizadas", realizadas)
+            with col_res3:
+                st.metric("Faltas", faltas)
+            with col_res4:
+                st.metric("Canceladas", canceladas)
         else:
             st.info("📅 Nenhuma consulta agendada para o período selecionado")
             
