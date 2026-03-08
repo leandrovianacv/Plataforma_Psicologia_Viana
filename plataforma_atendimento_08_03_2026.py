@@ -249,7 +249,7 @@ if menu == "➕ Cadastrar Paciente":
             else:
                 st.error("❌ Preencha os campos obrigatórios: Nome Completo e Telefone")
 
-# 2. MARCAR CONSULTA - CORRIGIDO (bloqueia horários passados)
+# 2. MARCAR CONSULTA - CORRIGIDO (sem mensagens no layout principal)
 elif menu == "📅 Marcar Consulta":
     st.header("📅 Marcar Nova Consulta")
     
@@ -271,7 +271,7 @@ elif menu == "📅 Marcar Consulta":
                     paciente_nome = st.selectbox("Paciente*", pacientes_df['nome_completo'])
                     data_consulta = st.date_input("Data*", min_value=date.today())
                     
-                    # CORREÇÃO: Obter hora atual de Cabo Verde
+                    # Obter hora atual de Cabo Verde
                     agora_cv = hora_cv_agora()
                     data_atual_cv = agora_cv.date()
                     hora_atual_cv = agora_cv.time()
@@ -287,27 +287,23 @@ elif menu == "📅 Marcar Consulta":
                     
                     # Filtrar horários:
                     # 1. Remover horários de aula
-                    # 2. Se for hoje, remover horários que já passaram
+                    # 2. Se for hoje, remover horários que já passaram (silenciosamente)
                     horarios_validos = []
-                    horarios_bloqueados = []
                     
                     for horario in todos_horarios:
                         # Verificar se é horário de aula
                         if eh_horario_de_aula(data_consulta, horario):
-                            horarios_bloqueados.append(horario)
                             continue
                         
                         # Se for hoje, verificar se horário já passou
                         if data_consulta == data_atual_cv:
                             if horario <= hora_atual_cv:
-                                horarios_bloqueados.append(horario)
                                 continue
                         
                         horarios_validos.append(horario)
                     
                     # Verificar horários já ocupados no banco
                     horarios_livres = []
-                    horarios_ocupados = []
                     
                     for horario in horarios_validos:
                         data_hora = datetime.combine(data_consulta, horario)
@@ -318,34 +314,14 @@ elif menu == "📅 Marcar Consulta":
                         )
                         if cur.fetchone() is None:
                             horarios_livres.append(horario)
-                        else:
-                            horarios_ocupados.append(horario)
                     
-                    # Mostrar informações de disponibilidade (apenas no formulário, não no layout principal fixo)
-                    dia_semana = data_consulta.weekday()
-                    
-                    if data_consulta == data_atual_cv:
-                        st.info(f"🕐 Hoje são {hora_atual_cv.strftime('%H:%M')} - Horários anteriores foram bloqueados")
-                    
-                    if dia_semana == 0:
-                        st.warning(f"⚠️ Segunda-feira: {len([h for h in todos_horarios if eh_horario_de_aula(data_consulta, h)])} horários de aula bloqueados (14:00-20:00)")
-                    elif dia_semana == 1:
-                        st.warning(f"⚠️ Terça-feira: {len([h for h in todos_horarios if eh_horario_de_aula(data_consulta, h)])} horários de aula bloqueados (9:30-11:10)")
-                    elif dia_semana == 3:
-                        st.warning(f"⚠️ Quinta-feira: {len([h for h in todos_horarios if eh_horario_de_aula(data_consulta, h)])} horários de aula bloqueados (14:00-18:00)")
-                    elif dia_semana == 4:
-                        st.warning(f"⚠️ Sexta-feira: {len([h for h in todos_horarios if eh_horario_de_aula(data_consulta, h)])} horários de aula bloqueados (7:30-9:30)")
-                    
-                    # Mostrar lista de horários disponíveis
+                    # Mostrar lista de horários disponíveis (sem mensagens adicionais)
                     if horarios_livres:
                         hora_consulta = st.selectbox(
                             "Horário*", 
                             horarios_livres,
                             format_func=lambda x: x.strftime('%H:%M')
                         )
-                        
-                        # Mostrar estatísticas em texto pequeno
-                        st.caption(f"📊 {len(horarios_livres)} disponíveis | {len(horarios_bloqueados)} bloqueados | {len(horarios_ocupados)} ocupados")
                     else:
                         st.error("❌ Não há horários disponíveis para esta data!")
                         hora_consulta = None
@@ -443,7 +419,16 @@ elif menu == "👥 Ver Pacientes":
             with col2:
                 from datetime import datetime
                 primeiro_dia_mes = datetime.now().replace(day=1)
-                st.metric("Cadastros este Mês", len(pacientes_df[pacientes_df['Cadastro'] >= primeiro_dia_mes.strftime('%d/%m/%Y')]))
+                # Converter para string para comparação simples
+                cadastros_mes = 0
+                for data_str in pacientes_df['Cadastro']:
+                    try:
+                        data_obj = datetime.strptime(data_str, '%d/%m/%Y')
+                        if data_obj >= primeiro_dia_mes:
+                            cadastros_mes += 1
+                    except:
+                        pass
+                st.metric("Cadastros este Mês", cadastros_mes)
         else:
             st.info("📝 Nenhum paciente cadastrado")
             
