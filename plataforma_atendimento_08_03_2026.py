@@ -193,7 +193,7 @@ if menu == "➕ Cadastrar Paciente":
             else:
                 st.error("❌ Preencha os campos obrigatórios: Nome Completo e Telefone")
 
-# 2. MARCAR CONSULTA - COM FILTRO DE HORÁRIO ATUAL PARA O DIA DE HOJE
+# 2. MARCAR CONSULTA - COM AJUSTE NO FILTRO DE DATA/HORA
 elif menu == "📅 Marcar Consulta":
     st.header("📅 Marcar Nova Consulta")
     
@@ -215,7 +215,7 @@ elif menu == "📅 Marcar Consulta":
                     paciente_nome = st.selectbox("Paciente*", pacientes_df['nome_completo'])
                     data_consulta = st.date_input("Data*", min_value=date.today())
                     
-                    # GERAR TODOS OS HORÁRIOS POSSÍVEIS (8h às 20h)
+                    # 1. Gerar todos os horários padrão (8h às 20h)
                     todos_horarios = []
                     for hora in range(8, 21):
                         for minuto in [0, 30]:
@@ -223,24 +223,29 @@ elif menu == "📅 Marcar Consulta":
                                 continue
                             todos_horarios.append(time(hora, minuto))
                     
-                    # FILTRAR HORÁRIOS PASSADOS SE A DATA FOR HOJE (UTC-1)
-                    agora = datetime.now() # Já assume o horário do servidor/local configurado
-                    horarios_disponiveis_base = []
-                    
-                    for h in todos_horarios:
-                        if data_consulta == date.today():
-                            # Só adiciona se o horário for maior que o horário atual
-                            if h > agora.time():
-                                horarios_disponiveis_base.append(h)
-                        else:
-                            # Para dias futuros, todos os horários de 8h às 20h
-                            horarios_disponiveis_base.append(h)
+                    # 2. Determinar horários permitidos baseados na data selecionada
+                    # Ajuste para UTC-1 (Cabo Verde)
+                    agora_utc = datetime.utcnow()
+                    agora_cv = agora_utc - timedelta(hours=1)
+                    hoje_cv = agora_cv.date()
+                    hora_cv = agora_cv.time()
 
-                    # REMOVER HORÁRIOS JÁ OCUPADOS NO BANCO
+                    horarios_permitidos = []
+                    
+                    # Se for HOJE, filtra apenas horários futuros
+                    if data_consulta == hoje_cv:
+                        for h in todos_horarios:
+                            if h > hora_cv:
+                                horarios_permitidos.append(h)
+                    # Se for qualquer outro dia, permite todos os horários da grade
+                    else:
+                        horarios_permitidos = todos_horarios
+
+                    # 3. Remover horários já ocupados no banco de dados
                     horarios_livres = []
-                    for horario in horarios_disponiveis_base:
+                    cur = conn.cursor()
+                    for horario in horarios_permitidos:
                         data_hora = datetime.combine(data_consulta, horario)
-                        cur = conn.cursor()
                         cur.execute(
                             "SELECT id FROM consultas WHERE data_consulta = %s AND status IN ('agendada', 'realizada')",
                             (data_hora,)
@@ -276,30 +281,29 @@ elif menu == "📅 Marcar Consulta":
                     else:
                         data_hora = datetime.combine(data_consulta, hora_consulta)
                         
-                        cur = conn.cursor()
+                        # Verificação final de segurança
                         cur.execute(
                             "SELECT id FROM consultas WHERE data_consulta = %s AND status IN ('agendada', 'realizada')",
                             (data_hora,)
                         )
                         
                         if cur.fetchone() is not None:
-                            st.error("❌ Este horário já foi preenchido! Escolha outro.")
-                            st.stop()
-                        
-                        paciente_row = pacientes_df[pacientes_df['nome_completo'] == paciente_nome].iloc[0]
-                        paciente_id = converter_numpy_para_python(paciente_row['id'])
-                        
-                        cur.execute(
-                            """INSERT INTO consultas 
-                            (paciente_id, data_consulta, primeira_consulta, valor_consulta, 
-                             forma_pagamento, observacoes_tecnicas) 
-                            VALUES (%s, %s, %s, %s, %s, %s)""",
-                            (paciente_id, data_hora, primeira_consulta, valor_consulta, 
-                             forma_pagamento, observacoes)
-                        )
-                        conn.commit()
-                        st.success(f"✅ Consulta marcada para {data_consulta.strftime('%d/%m/%Y')} às {hora_consulta.strftime('%H:%M')}")
-                        st.balloons()
+                            st.error("❌ Este horário acabou de ser ocupado! Escolha outro.")
+                        else:
+                            paciente_row = pacientes_df[pacientes_df['nome_completo'] == paciente_nome].iloc[0]
+                            paciente_id = converter_numpy_para_python(paciente_row['id'])
+                            
+                            cur.execute(
+                                """INSERT INTO consultas 
+                                (paciente_id, data_consulta, primeira_consulta, valor_consulta, 
+                                 forma_pagamento, observacoes_tecnicas) 
+                                VALUES (%s, %s, %s, %s, %s, %s)""",
+                                (paciente_id, data_hora, primeira_consulta, valor_consulta, 
+                                 forma_pagamento, observacoes)
+                            )
+                            conn.commit()
+                            st.success(f"✅ Consulta marcada para {data_consulta.strftime('%d/%m/%Y')} às {hora_consulta.strftime('%H:%M')}")
+                            st.balloons()
                     
     except Exception as e:
         st.error(f"❌ Erro: {e}")
@@ -337,11 +341,13 @@ elif menu == "👥 Ver Pacientes":
             with col1:
                 st.metric("Total de Pacientes", len(pacientes_df))
             with col2:
-                primeiro_dia_mes = datetime.now().replace(day=1)
+                # Usando data CV para consistência
+                hoje_cv = (datetime.utcnow() - timedelta(hours=1)).date()
+                primeiro_dia_mes = hoje_cv.replace(day=1)
                 cadastros_mes = 0
                 for data_str in pacientes_df['Cadastro']:
                     try:
-                        data_obj = datetime.strptime(data_str, '%d/%m/%Y')
+                        data_obj = datetime.strptime(data_str, '%d/%m/%Y').date()
                         if data_obj >= primeiro_dia_mes:
                             cadastros_mes += 1
                     except:
@@ -376,7 +382,7 @@ elif menu == "🗓️ Agenda da Semana":
                        c.forma_pagamento
                 FROM consultas c
                 JOIN pacientes p ON c.paciente_id = p.id
-                WHERE DATE(c.data_consulta) = CURRENT_DATE
+                WHERE DATE(c.data_consulta AT TIME ZONE 'UTC-1') = CURRENT_DATE
                 ORDER BY c.data_consulta
             """, conn)
         elif opcao_agenda == "Amanhã":
@@ -387,7 +393,7 @@ elif menu == "🗓️ Agenda da Semana":
                        c.forma_pagamento
                 FROM consultas c
                 JOIN pacientes p ON c.paciente_id = p.id
-                WHERE DATE(c.data_consulta) = CURRENT_DATE + INTERVAL '1 day'
+                WHERE DATE(c.data_consulta AT TIME ZONE 'UTC-1') = CURRENT_DATE + INTERVAL '1 day'
                 ORDER BY c.data_consulta
             """, conn)
         else:
@@ -398,7 +404,7 @@ elif menu == "🗓️ Agenda da Semana":
                        c.forma_pagamento
                 FROM consultas c
                 JOIN pacientes p ON c.paciente_id = p.id
-                WHERE c.data_consulta BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'
+                WHERE (c.data_consulta AT TIME ZONE 'UTC-1') BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'
                 ORDER BY c.data_consulta
             """, conn)
         
@@ -459,7 +465,7 @@ elif menu == "✅ Registrar Consulta Realizada":
                    c.pagamento_realizado, c.status
             FROM consultas c
             JOIN pacientes p ON c.paciente_id = p.id
-            WHERE c.status = 'agendada' AND c.data_consulta <= CURRENT_DATE + INTERVAL '1 day'
+            WHERE c.status = 'agendada' AND c.data_consulta <= CURRENT_TIMESTAMP + INTERVAL '1 day'
             ORDER BY c.data_consulta
         """, conn)
         
