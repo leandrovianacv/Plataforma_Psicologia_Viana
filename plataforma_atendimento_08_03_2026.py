@@ -4,7 +4,7 @@ import pandas as pd
 from datetime import datetime, date, time, timedelta
 import os
 import numpy as np
-import pytz  # Adicionar esta importação
+import pytz
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -20,7 +20,7 @@ def hoje_cv():
     """Retorna a data atual em Cabo Verde"""
     return agora_cv().date()
 
-# Função para converter numpy.int64 (mantida igual)
+# Função para converter numpy.int64
 def converter_numpy_para_python(valor):
     """Converte tipos numpy para tipos Python nativos"""
     if isinstance(valor, (np.integer, np.int64)):
@@ -39,7 +39,98 @@ st.set_page_config(
     layout="wide"
 )
 
-# [MANTER TODAS AS FUNÇÕES DE CONEXÃO E INICIALIZAÇÃO IGUAIS]
+# Conexão com Supabase (via Session Pooler)
+def conectar_banco():
+    """Conecta ao Supabase usando Session Pooler"""
+    try:
+        if "DB_URL" in st.secrets:
+            db_url = st.secrets["DB_URL"]
+            import re
+            match = re.match(r'postgresql://([^:]+):([^@]+)@([^:]+):(\d+)/(.+)', db_url)
+            if match:
+                user, password, host, port, dbname = match.groups()
+                return psycopg2.connect(
+                    host=host,
+                    port=port,
+                    database=dbname,
+                    user=user,
+                    password=password
+                )
+        else:
+            db_url = os.getenv("DB_URL")
+            if db_url:
+                import re
+                match = re.match(r'postgresql://([^:]+):([^@]+)@([^:]+):(\d+)/(.+)', db_url)
+                if match:
+                    user, password, host, port, dbname = match.groups()
+                    return psycopg2.connect(
+                        host=host,
+                        port=port,
+                        database=dbname,
+                        user=user,
+                        password=password
+                    )
+            else:
+                st.error("❌ DB_URL não configurada! Use secrets ou variável de ambiente.")
+                return None
+    except Exception as e:
+        st.error(f"Erro ao conectar: {e}")
+        return None
+
+# Inicializar banco
+def inicializar_banco():
+    """Garante que as tabelas necessárias existam"""
+    try:
+        conn = conectar_banco()
+        if conn is None:
+            return False
+            
+        cur = conn.cursor()
+        
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS pacientes (
+                id SERIAL PRIMARY KEY,
+                nome_completo VARCHAR(100) NOT NULL,
+                telefone VARCHAR(20) NOT NULL,
+                email VARCHAR(100),
+                data_nascimento DATE,
+                profissao VARCHAR(50),
+                como_chegou VARCHAR(50),
+                queixa_principal TEXT,
+                medicacoes_atuais TEXT,
+                observacoes_iniciais TEXT,
+                ativo BOOLEAN DEFAULT TRUE,
+                data_cadastro TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS consultas (
+                id SERIAL PRIMARY KEY,
+                paciente_id INTEGER REFERENCES pacientes(id),
+                data_consulta TIMESTAMP NOT NULL,
+                primeira_consulta BOOLEAN DEFAULT TRUE,
+                valor_consulta DECIMAL(10,2) DEFAULT 0,
+                status VARCHAR(20) DEFAULT 'agendada',
+                observacoes_tecnicas TEXT,
+                pagamento_realizado BOOLEAN DEFAULT FALSE,
+                forma_pagamento VARCHAR(50),
+                data_criacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        st.error(f"Erro ao inicializar banco: {e}")
+        return False
+
+# Executar inicialização
+if inicializar_banco():
+    st.sidebar.success("✅ Conectado ao Supabase")
+else:
+    st.sidebar.error("❌ Falha na conexão com Supabase")
 
 # HEADER PERSONALIZADO
 st.markdown("<h1 style='text-align: center; color: #1f77b4;'>🧠 PSICARE BY BELINDA VIANA</h1>", unsafe_allow_html=True)
@@ -60,7 +151,7 @@ menu = st.sidebar.selectbox("Selecione uma opção:", [
     "📊 Estatísticas"
 ])
 
-# 1. CADASTRAR PACIENTE (mantido igual)
+# 1. CADASTRAR PACIENTE
 if menu == "➕ Cadastrar Paciente":
     st.header("👤 Cadastrar Novo Paciente")
     
@@ -76,7 +167,7 @@ if menu == "➕ Cadastrar Paciente":
             data_nascimento = st.date_input(
                 "Data de Nascimento", 
                 min_value=date(1930, 1, 1),
-                max_value=hoje_cv(),  # Usar data atual de CV
+                max_value=hoje_cv(),
                 value=None,
                 format="DD/MM/YYYY"
             )
@@ -148,7 +239,7 @@ elif menu == "📅 Marcar Consulta":
                     data_consulta = st.date_input(
                         "Data*", 
                         min_value=data_atual_cv,
-                        value=data_atual_cv  # Valor padrão é hoje
+                        value=data_atual_cv
                     )
                     
                     # GERAR TODOS OS HORÁRIOS POSSÍVEIS (8h às 20h)
@@ -159,9 +250,9 @@ elif menu == "📅 Marcar Consulta":
                                 continue
                             todos_horarios.append(time(hora, minuto))
                     
-                    # REMOVER HORÁRIOS JÁ OCUPADOS
+                    # REMOVER HORÁRIOS JÁ OCUPADOS E OS QUE JÁ PASSARAM
                     horarios_livres = []
-                    agora = agora_cv()  # Hora atual em CV
+                    agora = agora_cv()
                     
                     for horario in todos_horarios:
                         data_hora = datetime.combine(data_consulta, horario)
@@ -169,10 +260,10 @@ elif menu == "📅 Marcar Consulta":
                         # Se for hoje, verificar se o horário já passou
                         if data_consulta == data_atual_cv:
                             horario_datetime = datetime.combine(data_consulta, horario)
-                            horario_datetime = CVT.localize(horario_datetime)  # Localizar no fuso CV
+                            horario_datetime = CVT.localize(horario_datetime)
                             
                             if horario_datetime <= agora:
-                                continue  # Pular horários que já passaram hoje
+                                continue
                         
                         # Verificar se já existe consulta neste horário
                         cur = conn.cursor()
@@ -250,7 +341,7 @@ elif menu == "📅 Marcar Consulta":
         if 'conn' in locals() and conn:
             conn.close()
 
-# 3. VER PACIENTES (mantido igual)
+# 3. VER PACIENTES
 elif menu == "👥 Ver Pacientes":
     st.header("👥 Lista de Pacientes")
     
@@ -300,7 +391,7 @@ elif menu == "👥 Ver Pacientes":
         if 'conn' in locals() and conn:
             conn.close()
 
-# 4. AGENDA DA SEMANA (corrigido para mostrar corretamente)
+# 4. AGENDA DA SEMANA - COM OPÇÃO DE CANCELAR
 elif menu == "🗓️ Agenda da Semana":
     st.header("🗓️ Agenda de Consultas")
     
@@ -315,7 +406,6 @@ elif menu == "🗓️ Agenda da Semana":
         # Data atual em Cabo Verde
         hoje = hoje_cv()
         
-        # Consultas SQL adaptadas para considerar data em UTC
         if opcao_agenda == "Hoje":
             query = """
                 SELECT c.id, p.nome_completo, c.data_consulta, 
@@ -439,7 +529,7 @@ elif menu == "🗓️ Agenda da Semana":
         if 'conn' in locals() and conn:
             conn.close()
 
-# 5. REGISTRAR CONSULTA REALIZADA (corrigido com fuso)
+# 5. REGISTRAR CONSULTA REALIZADA
 elif menu == "✅ Registrar Consulta Realizada":
     st.header("✅ Registrar Consulta Realizada")
     
@@ -518,7 +608,7 @@ elif menu == "✅ Registrar Consulta Realizada":
         if 'conn' in locals() and conn:
             conn.close()
 
-# 6. ESTATÍSTICAS (mantido igual)
+# 6. ESTATÍSTICAS
 elif menu == "📊 Estatísticas":
     st.header("📊 Estatísticas do Consultório")
     
