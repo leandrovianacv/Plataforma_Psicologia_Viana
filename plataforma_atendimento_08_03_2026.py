@@ -30,12 +30,11 @@ def eh_horario_de_aula(data_consulta, hora_consulta):
     # Converter hora para minutos
     minutos = hora_consulta.hour * 60 + hora_consulta.minute
     
-    # SEGUNDA-FEIRA: 14:00 às 20:00 (bloquear TODOS os horários neste intervalo)
+    # SEGUNDA-FEIRA: 14:00 às 20:00
     if dia_semana == 0:
         if minutos >= 14*60 and minutos < 20*60:  # 14:00 até 19:59
             return True
-        # Bloquear também 20:00 exato se existir
-        if minutos == 20*60:
+        if minutos == 20*60:  # 20:00 exato
             return True
     
     # TERÇA-FEIRA: 9:30 às 11:10
@@ -162,7 +161,7 @@ def hora_cv_agora():
     cv_agora = utc_agora - timedelta(hours=1)  # Cabo Verde é UTC-1
     return cv_agora
 
-# Informações de horários no sidebar
+# Informações de horários no sidebar (APENAS AQUI - removido do layout principal)
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 📚 Horários de Aula (Cabo Verde)")
 st.sidebar.info(
@@ -248,7 +247,7 @@ if menu == "➕ Cadastrar Paciente":
             else:
                 st.error("❌ Preencha os campos obrigatórios (*)")
 
-# 2. MARCAR CONSULTA - CORRIGIDO (bloqueio de horários de aula)
+# 2. MARCAR CONSULTA
 elif menu == "📅 Marcar Consulta":
     st.header("📅 Marcar Nova Consulta")
     
@@ -270,7 +269,7 @@ elif menu == "📅 Marcar Consulta":
                     paciente_nome = st.selectbox("Paciente*", pacientes_df['nome_completo'])
                     data_consulta = st.date_input("Data*", min_value=date.today())
                     
-                    # CORREÇÃO: Gerar horários de 30 em 30 minutos
+                    # Gerar horários de 30 em 30 minutos
                     todos_horarios = []
                     for hora in range(8, 21):  # 8h às 20h
                         for minuto in [0, 30]:
@@ -286,15 +285,28 @@ elif menu == "📅 Marcar Consulta":
                     for horario in todos_horarios:
                         if eh_horario_de_aula(data_consulta, horario):
                             horarios_bloqueados.append(horario)
-                            # DEBUG: print para verificar quais estão sendo bloqueados
-                            print(f"BLOQUEADO: {data_consulta} - {horario.strftime('%H:%M')}")
                         else:
                             horarios_disponiveis.append(horario)
                     
-                    # Mostrar contagem de horários bloqueados
+                    # Verificar horários já ocupados
+                    horarios_livres = []
+                    horarios_ocupados = []
+                    
+                    for horario in horarios_disponiveis:
+                        data_hora = datetime.combine(data_consulta, horario)
+                        cur = conn.cursor()
+                        cur.execute(
+                            "SELECT id FROM consultas WHERE data_consulta = %s AND status IN ('agendada', 'realizada')",
+                            (data_hora,)
+                        )
+                        if cur.fetchone() is None:
+                            horarios_livres.append(horario)
+                        else:
+                            horarios_ocupados.append(horario)
+                    
+                    # Mostrar informações de disponibilidade
                     dia_semana = data_consulta.weekday()
                     
-                    # Mensagens específicas por dia
                     if dia_semana == 0:
                         st.warning(f"⚠️ Segunda-feira: {len(horarios_bloqueados)} horários bloqueados (14:00-20:00)")
                     elif dia_semana == 1:
@@ -304,15 +316,15 @@ elif menu == "📅 Marcar Consulta":
                     elif dia_semana == 4:
                         st.warning(f"⚠️ Sexta-feira: {len(horarios_bloqueados)} horários bloqueados (7:30-9:30)")
                     
-                    # Mostrar lista de horários disponíveis (APENAS os que não são de aula)
-                    if horarios_disponiveis:
+                    # Mostrar lista de horários disponíveis
+                    if horarios_livres:
                         hora_consulta = st.selectbox(
                             "Horário*", 
-                            horarios_disponiveis,
+                            horarios_livres,
                             format_func=lambda x: x.strftime('%H:%M')
                         )
                         
-                        # Mostrar horários bloqueados em texto menor (opcional)
+                        # Mostrar horários bloqueados em texto menor
                         if horarios_bloqueados:
                             horarios_bloq_str = ", ".join([h.strftime('%H:%M') for h in horarios_bloqueados])
                             st.caption(f"🚫 Horários de aula bloqueados: {horarios_bloq_str}")
@@ -344,7 +356,6 @@ elif menu == "📅 Marcar Consulta":
                         data_hora = datetime.combine(data_consulta, hora_consulta)
                         
                         # Verificar se horário já está ocupado
-                        cur = conn.cursor()
                         cur.execute(
                             "SELECT id FROM consultas WHERE data_consulta = %s AND status IN ('agendada', 'realizada')",
                             (data_hora,)
@@ -486,7 +497,8 @@ elif menu == "🗓️ Agenda da Semana":
                     
             total_consultas = len(agenda_df)
             realizadas = len(agenda_df[agenda_df['status'] == 'realizada'])
-            st.metric("Total de Consultas", total_consultas, f"{realizadas} realizadas")
+            faltas = len(agenda_df[agenda_df['status'] == 'falta'])
+            st.metric("Total de Consultas", total_consultas, f"{realizadas} realizadas, {faltas} faltas")
         else:
             st.info("📅 Nenhuma consulta agendada para o período selecionado")
             
@@ -496,7 +508,7 @@ elif menu == "🗓️ Agenda da Semana":
         if 'conn' in locals() and conn:
             conn.close()
 
-# 5. REGISTRAR CONSULTA REALIZADA
+# 5. REGISTRAR CONSULTA REALIZADA - CORRIGIDO com opção "Paciente não compareceu"
 elif menu == "✅ Registrar Consulta Realizada":
     st.header("✅ Registrar Consulta Realizada")
     
@@ -508,16 +520,16 @@ elif menu == "✅ Registrar Consulta Realizada":
             
         consultas_df = pd.read_sql("""
             SELECT c.id, p.nome_completo, c.data_consulta, c.valor_consulta,
-                   c.pagamento_realizado
+                   c.pagamento_realizado, c.status
             FROM consultas c
             JOIN pacientes p ON c.paciente_id = p.id
-            WHERE c.status = 'agendada' AND c.data_consulta <= NOW() + INTERVAL '1 hour'
+            WHERE c.status = 'agendada' AND c.data_consulta <= NOW() + INTERVAL '1 day'
             ORDER BY c.data_consulta
         """, conn)
         
         if not consultas_df.empty:
-            consultas_df['display'] = consultas_df['nome_completo'] + " - " + consultas_df['data_consulta'].dt.strftime('%d/%m %H:%M')
-            consulta_selecionada = st.selectbox("Selecionar Consulta:", consultas_df['display'])
+            consultas_df['display'] = consultas_df['nome_completo'] + " - " + consultas_df['data_consulta'].dt.strftime('%d/%m/%Y %H:%M')
+            consulta_selecionada = st.selectbox("Selecione a consulta:", consultas_df['display'])
             
             consulta_info = consultas_df[consultas_df['display'] == consulta_selecionada].iloc[0]
             
@@ -529,9 +541,10 @@ elif menu == "✅ Registrar Consulta Realizada":
             - **Pagamento:** {'✅ Pago' if consulta_info['pagamento_realizado'] else '⏳ Pendente'}
             """)
             
-            col1, col2 = st.columns(2)
+            col1, col2, col3 = st.columns(3)
+            
             with col1:
-                if st.button("✅ Marcar como Realizada", type="primary"):
+                if st.button("✅ Realizada", type="primary", use_container_width=True):
                     consulta_id = converter_numpy_para_python(consulta_info['id'])
                     
                     cur = conn.cursor()
@@ -541,8 +554,18 @@ elif menu == "✅ Registrar Consulta Realizada":
                     st.rerun()
             
             with col2:
-                if not consulta_info['pagamento_realizado']:
-                    if st.button("💰 Registrar Pagamento"):
+                if st.button("❌ Não compareceu", type="secondary", use_container_width=True):
+                    consulta_id = converter_numpy_para_python(consulta_info['id'])
+                    
+                    cur = conn.cursor()
+                    cur.execute("UPDATE consultas SET status = 'falta' WHERE id = %s", (consulta_id,))
+                    conn.commit()
+                    st.warning("⚠️ Consulta registrada como falta (paciente não compareceu)")
+                    st.rerun()
+            
+            with col3:
+                if not consulta_info['pagamento_realizado'] and consulta_info['status'] == 'realizada':
+                    if st.button("💰 Pagamento", use_container_width=True):
                         consulta_id = converter_numpy_para_python(consulta_info['id'])
                         
                         cur = conn.cursor()
@@ -550,6 +573,8 @@ elif menu == "✅ Registrar Consulta Realizada":
                         conn.commit()
                         st.success("💰 Pagamento registrado com sucesso!")
                         st.rerun()
+                else:
+                    st.button("💰 Pagamento", disabled=True, use_container_width=True)
         else:
             st.info("📝 Nenhuma consulta agendada para registrar")
             
@@ -626,15 +651,14 @@ elif menu == "📊 Estatísticas":
         if 'conn' in locals() and conn:
             conn.close()
 
-# RODAPÉ PERSONALIZADO
+# RODAPÉ PERSONALIZADO (sem a seção de horários)
 st.markdown("---")
 st.markdown(
     "<div style='text-align: center; color: #666; padding: 10px;'>"
     "🧠 <b>Psicare by Belinda Viana</b> - Consultório de Psicologia | "
     "📞 Contacto: +238 5949955 | "
     "📧 Email: contato@atendimentoviana.cv | "
-    "🌐 www.atendimentoviana.cv<br>"
-    "<small>📍 Cabo Verde (UTC-1) | Hora atual: {} | ✅ Horários de aula bloqueados</small>"
-    "</div>".format(hora_cv_agora().strftime('%H:%M')), 
+    "🌐 www.atendimentoviana.cv"
+    "</div>", 
     unsafe_allow_html=True
 )
