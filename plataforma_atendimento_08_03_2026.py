@@ -1,21 +1,15 @@
 import streamlit as st
+import psycopg2
 import pandas as pd
 from datetime import datetime, date, time, timedelta
-import numpy as np
-from sqlalchemy import create_engine, text
-import socket
-import time as tempo
 import os
+import numpy as np
+import warnings
+warnings.filterwarnings('ignore')
 
-# --- CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(
-    page_title="Atendimento Viana - Psicologia", 
-    page_icon="🧠",
-    layout="wide"
-)
-
-# --- FUNÇÃO DE CONVERSÃO DE TIPOS ---
+# CORREÇÃO 1: Função para converter numpy.int64
 def converter_numpy_para_python(valor):
+    """Converte tipos numpy para tipos Python nativos"""
     if isinstance(valor, (np.integer, np.int64)):
         return int(valor)
     elif isinstance(valor, (np.floating, np.float64)):
@@ -25,10 +19,10 @@ def converter_numpy_para_python(valor):
     else:
         return valor
 
-# --- FUNÇÃO PARA VERIFICAR HORÁRIO DE AULA ---
+# CORREÇÃO 2: Função para verificar horários de aula (Cabo Verde)
 def eh_horario_de_aula(data_consulta, hora_consulta):
     """
-    Verifica se o horário específico é de aula
+    Verifica se o horário específico é de aula (Cabo Verde - UTC-1)
     Retorna True se for horário de aula, False caso contrário
     """
     dia_semana = data_consulta.weekday()  # 0=Segunda, 1=Terça, 2=Quarta, 3=Quinta, 4=Sexta
@@ -36,98 +30,87 @@ def eh_horario_de_aula(data_consulta, hora_consulta):
     # Converter hora para minutos
     minutos = hora_consulta.hour * 60 + hora_consulta.minute
     
-    # Segunda-feira: 14:00 às 20:00
-    if dia_semana == 0:
+    # Segunda-feira: 14:00 às 20:00 (aula)
+    if dia_semana == 0:  # Segunda
         if minutos >= 14*60 and minutos < 20*60:
             return True
     
-    # Terça-feira: 9:30 às 11:10
-    elif dia_semana == 1:
+    # Terça-feira: 9:30 às 11:10 (aula)
+    elif dia_semana == 1:  # Terça
         if minutos >= 9*60+30 and minutos < 11*60+10:
             return True
     
-    # Quinta-feira: 14:00 às 18:00
-    elif dia_semana == 3:
+    # Quinta-feira: 14:00 às 18:00 (aula)
+    elif dia_semana == 3:  # Quinta
         if minutos >= 14*60 and minutos < 18*60:
             return True
     
-    # Sexta-feira: 7:30 às 9:30
-    elif dia_semana == 4:
+    # Sexta-feira: 7:30 às 9:30 (aula)
+    elif dia_semana == 4:  # Sexta
         if minutos >= 7*60+30 and minutos < 9*60+30:
             return True
     
     return False
 
-# --- FUNÇÃO PARA TESTAR CONEXÃO COM INTERNET ---
-def testar_conexao_internet():
-    try:
-        socket.create_connection(("8.8.8.8", 53), timeout=3)
-        return True
-    except OSError:
-        return False
+# Configuração da página
+st.set_page_config(
+    page_title="Atendimento Viana - Psicologia", 
+    page_icon="🧠",
+    layout="wide"
+)
 
-# --- FUNÇÃO PARA VERIFICAR SECRETS ---
-def verificar_secrets():
-    if "DB_URL" in st.secrets:
-        db_url = st.secrets["DB_URL"]
-        
-        if "[YOUR-PASSWORD]" in db_url:
-            st.error("❌ **ERRO: Substitua [YOUR-PASSWORD] pela senha real!**")
-            st.stop()
-        
-        return db_url
-    else:
+# Conexão com Supabase (via Session Pooler) - VERSÃO SEGURA
+def conectar_banco():
+    """Conecta ao Supabase usando Session Pooler - APENAS via secrets"""
+    try:
+        # APENAS usa secrets - NUNCA coloque senha no código!
+        if "DB_URL" in st.secrets:
+            db_url = st.secrets["DB_URL"]
+            import re
+            match = re.match(r'postgresql://([^:]+):([^@]+)@([^:]+):(\d+)/(.+)', db_url)
+            if match:
+                user, password, host, port, dbname = match.groups()
+                return psycopg2.connect(
+                    host=host,
+                    port=port,
+                    database=dbname,
+                    user=user,
+                    password=password
+                )
+        else:
+            # Para teste local - usa variável de ambiente (mais seguro)
+            db_url = os.getenv("DB_URL")
+            if db_url:
+                import re
+                match = re.match(r'postgresql://([^:]+):([^@]+)@([^:]+):(\d+)/(.+)', db_url)
+                if match:
+                    user, password, host, port, dbname = match.groups()
+                    return psycopg2.connect(
+                        host=host,
+                        port=port,
+                        database=dbname,
+                        user=user,
+                        password=password
+                    )
+            else:
+                st.error("❌ DB_URL não configurada! Use secrets ou variável de ambiente.")
+                return None
+    except Exception as e:
+        st.error(f"Erro ao conectar: {e}")
         return None
 
-# --- CONEXÃO COM O BANCO DE DADOS ---
-@st.cache_resource
-def conectar_banco():
-    if not testar_conexao_internet():
-        st.error("⚠️ **Sem conexão com a internet!**")
-        st.stop()
-    
-    db_url = verificar_secrets()
-    
-    if db_url is None:
-        st.error("⚠️ **Erro: DB_URL não encontrada!**")
-        st.info("""
-        Crie o arquivo `.streamlit/secrets.toml` com:
-        DB_URL = "postgresql://postgres.opuyirrrrzibpxzkrikk:SUA_SENHA@aws-1-eu-west-2.pooler.supabase.com:5432/postgres"
-        """)
-        st.stop()
-    
-    try:
-        engine = create_engine(
-            db_url,
-            pool_size=5,
-            max_overflow=10,
-            pool_timeout=30,
-            pool_recycle=3600,
-            connect_args={'connect_timeout': 15}
-        )
-        
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
-        
-        return engine
-        
-    except Exception as e:
-        erro_str = str(e)
-        
-        if "could not translate host name" in erro_str:
-            st.error("❌ **Erro: Host não encontrado! Use o Session Pooler**")
-        elif "password authentication" in erro_str.lower():
-            st.error("❌ **Erro: Senha incorreta!**")
-        else:
-            st.error(f"❌ **Erro:** {e}")
-        
-        st.stop()
-
-# --- INICIALIZAÇÃO DO BANCO ---
+# Inicializar banco (criar tabelas se não existirem)
 def inicializar_banco():
-    engine = conectar_banco()
-    with engine.connect() as conn:
-        conn.execute(text("""
+    """Garante que as tabelas necessárias existam"""
+    try:
+        conn = conectar_banco()
+        if conn is None:
+            return False
+            
+        cur = conn.cursor()
+        
+        # Tabela pacientes
+        cur.execute("""
             CREATE TABLE IF NOT EXISTS pacientes (
                 id SERIAL PRIMARY KEY,
                 nome_completo VARCHAR(100) NOT NULL,
@@ -142,9 +125,10 @@ def inicializar_banco():
                 ativo BOOLEAN DEFAULT TRUE,
                 data_cadastro TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
-        """))
+        """)
         
-        conn.execute(text("""
+        # Tabela consultas
+        cur.execute("""
             CREATE TABLE IF NOT EXISTS consultas (
                 id SERIAL PRIMARY KEY,
                 paciente_id INTEGER REFERENCES pacientes(id),
@@ -157,37 +141,48 @@ def inicializar_banco():
                 forma_pagamento VARCHAR(50),
                 data_criacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
-        """))
+        """)
+        
         conn.commit()
-    return engine
+        conn.close()
+        return True
+    except Exception as e:
+        st.error(f"Erro ao inicializar banco: {e}")
+        return False
 
-# --- INICIALIZAÇÃO ---
-engine = inicializar_banco()
-st.sidebar.success("✅ Banco conectado")
+# Executar inicialização
+if inicializar_banco():
+    st.sidebar.success("✅ Conectado ao Supabase")
+else:
+    st.sidebar.error("❌ Falha na conexão com Supabase")
 
-# --- INTERFACE ---
-st.markdown("<h1 style='text-align: center; color: #1f77b4;'>🧠 ATENDIMENTO VIANA - CONSULTÓRIO DE PSICOLOGIA</h1>", unsafe_allow_html=True)
-st.markdown("---")
-
-st.sidebar.markdown("## 🧭 Navegação")
-menu = st.sidebar.selectbox("Selecione:", [
-    "➕ Cadastrar Paciente", 
-    "📅 Marcar Consulta",
-    "👥 Ver Pacientes", 
-    "🗓️ Agenda",
-    "✅ Registrar Consulta",
-    "📊 Estatísticas"
-])
-
-# Informações de horários no sidebar
+# Informações de horários no sidebar (Cabo Verde)
 st.sidebar.markdown("---")
-st.sidebar.markdown("### 📚 Horários de Aula (bloqueados)")
+st.sidebar.markdown("### 📚 Horários de Aula (Cabo Verde)")
 st.sidebar.info(
+    "**Horários bloqueados:**\n"
     "• Segunda: 14:00-20:00\n"
     "• Terça: 9:30-11:10\n"
     "• Quinta: 14:00-18:00\n"
-    "• Sexta: 7:30-9:30"
+    "• Sexta: 7:30-9:30\n\n"
+    f"**Data/Hora atual:**\n"
+    f"{datetime.now().strftime('%d/%m/%Y %H:%M')} (CVT)"
 )
+
+# HEADER PERSONALIZADO
+st.markdown("<h1 style='text-align: center; color: #1f77b4;'>🧠 PSICARE BY BELINDA VIANA</h1>", unsafe_allow_html=True)
+st.markdown("---")
+
+# MENU PERSONALIZADO
+st.sidebar.markdown("## 🧭 Navegação")
+menu = st.sidebar.selectbox("Selecione uma opção:", [
+    "➕ Cadastrar Paciente", 
+    "📅 Marcar Consulta",
+    "👥 Ver Pacientes", 
+    "🗓️ Agenda da Semana",
+    "✅ Registrar Consulta Realizada",
+    "📊 Estatísticas"
+])
 
 # 1. CADASTRAR PACIENTE
 if menu == "➕ Cadastrar Paciente":
@@ -211,48 +206,53 @@ if menu == "➕ Cadastrar Paciente":
             )
             
         with col2:
-            profissao = st.text_input("Profissão", placeholder="Ex: Professor, Advogado...")
+            profissao = st.text_input("Profissão", placeholder="Profissão atual")
             como_chegou = st.selectbox("Como chegou até nós", 
                                      ["Indicação", "Internet", "Redes Sociais", "Outro"])
-            queixa_principal = st.text_area("Queixa Principal*", height=100, placeholder="Descreva a queixa principal...")
+            queixa_principal = st.text_area("Queixa Principal*", 
+                                          placeholder="Descreva a queixa principal...", 
+                                          height=100)
         
-        medicacoes = st.text_input("Medicações Atuais", placeholder="Medicações em uso...")
-        observacoes = st.text_area("Observações Iniciais", height=80, placeholder="Observações relevantes...")
+        medicacoes = st.text_input("Medicações Atuais", placeholder="Medicações em uso")
+        observacoes = st.text_area("Observações Iniciais", 
+                                 placeholder="Observações relevantes...",
+                                 height=80)
         
-        if st.form_submit_button("💾 Salvar Paciente", type="primary"):
+        if st.form_submit_button("💾 Salvar Paciente"):
             if nome and telefone and queixa_principal:
                 try:
-                    with engine.connect() as conn:
-                        conn.execute(text("""
-                            INSERT INTO pacientes 
-                            (nome_completo, telefone, email, data_nascimento, profissao, 
-                             como_chegou, queixa_principal, medicacoes_atuais, observacoes_iniciais) 
-                            VALUES (:n, :t, :e, :d, :p, :c, :q, :m, :o)
-                        """), {
-                            "n": nome, 
-                            "t": telefone, 
-                            "e": email, 
-                            "d": data_nascimento, 
-                            "p": profissao, 
-                            "c": como_chegou, 
-                            "q": queixa_principal, 
-                            "m": medicacoes, 
-                            "o": observacoes
-                        })
-                        conn.commit()
+                    conn = conectar_banco()
+                    cur = conn.cursor()
+                    cur.execute(
+                        """INSERT INTO pacientes 
+                        (nome_completo, telefone, email, data_nascimento, profissao, 
+                         como_chegou, queixa_principal, medicacoes_atuais, observacoes_iniciais) 
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                        (nome, telefone, email, data_nascimento, profissao, como_chegou, 
+                         queixa_principal, medicacoes, observacoes)
+                    )
+                    conn.commit()
                     st.success("✅ Paciente cadastrado com sucesso!")
                     st.balloons()
                 except Exception as e:
-                    st.error(f"❌ Erro: {e}")
+                    st.error(f"❌ Erro ao salvar: {e}")
+                finally:
+                    if conn:
+                        conn.close()
             else:
                 st.error("❌ Preencha os campos obrigatórios (*)")
 
-# 2. MARCAR CONSULTA
+# 2. MARCAR CONSULTA - COM BLOQUEIO DE HORÁRIOS DE AULA
 elif menu == "📅 Marcar Consulta":
     st.header("📅 Marcar Nova Consulta")
     
     try:
-        pacientes_df = pd.read_sql("SELECT id, nome_completo FROM pacientes WHERE ativo = TRUE ORDER BY nome_completo", engine)
+        conn = conectar_banco()
+        if conn is None:
+            st.error("❌ Não foi possível conectar ao banco de dados")
+            st.stop()
+            
+        pacientes_df = pd.read_sql("SELECT id, nome_completo FROM pacientes WHERE ativo = TRUE ORDER BY nome_completo", conn)
         
         if pacientes_df.empty:
             st.warning("⚠️ Cadastre pacientes primeiro!")
@@ -287,15 +287,15 @@ elif menu == "📅 Marcar Consulta":
                     
                     for horario in horarios_disponiveis:
                         data_hora = datetime.combine(data_consulta, horario)
-                        with engine.connect() as conn:
-                            result = conn.execute(
-                                text("SELECT id FROM consultas WHERE data_consulta = :dt AND status IN ('agendada', 'realizada')"),
-                                {"dt": data_hora}
-                            ).fetchone()
-                            if result is None:
-                                horarios_livres.append(horario)
-                            else:
-                                horarios_ocupados.append(horario)
+                        cur = conn.cursor()
+                        cur.execute(
+                            "SELECT id FROM consultas WHERE data_consulta = %s AND status IN ('agendada', 'realizada')",
+                            (data_hora,)
+                        )
+                        if cur.fetchone() is None:
+                            horarios_livres.append(horario)
+                        else:
+                            horarios_ocupados.append(horario)
                     
                     # Mostrar estatísticas
                     col_info1, col_info2, col_info3 = st.columns(3)
@@ -327,21 +327,19 @@ elif menu == "📅 Marcar Consulta":
                     elif dia_semana == 4:
                         st.warning("⚠️ Sexta-feira: Horários das 7:30 às 9:30 são de AULA (bloqueados)")
                 
-                with col2:
+                with col2: 
                     primeira_consulta = st.checkbox("Primeira Consulta", value=True)
-                    valor_consulta = st.number_input(
-                        "Valor da Consulta (CVE)", 
-                        min_value=0.0, 
-                        value=2500.0 if primeira_consulta else 2000.0,
-                        step=100.0,
-                        format="%.0f"
-                    )
+                    valor_consulta = st.number_input("Valor da Consulta (CVE)", 
+                                                   min_value=0.0, 
+                                                   value=2500.0 if primeira_consulta else 2000.0,
+                                                   step=100.0,
+                                                   format="%.0f")
                     forma_pagamento = st.selectbox("Forma de Pagamento", 
                                                  ["Dinheiro", "Transferência", "MB Way", "Cartão", "Outro"])
                 
-                observacoes = st.text_area("Observações Técnicas", height=100)
+                observacoes = st.text_area("Observações Técnicas")
                 
-                if st.form_submit_button("📅 Agendar Consulta", type="primary"):
+                if st.form_submit_button("📅 Agendar Consulta"):
                     if hora_consulta is None:
                         st.error("❌ Selecione um horário válido!")
                     else:
@@ -353,249 +351,297 @@ elif menu == "📅 Marcar Consulta":
                         data_hora = datetime.combine(data_consulta, hora_consulta)
                         
                         # Verificar se horário ainda está livre
-                        with engine.connect() as conn:
-                            result = conn.execute(
-                                text("SELECT id FROM consultas WHERE data_consulta = :dt AND status IN ('agendada', 'realizada')"),
-                                {"dt": data_hora}
-                            ).fetchone()
-                            
-                            if result is not None:
-                                st.error("❌ Este horário já está ocupado! Escolha outro.")
-                                st.stop()
-                            
-                            # Inserir consulta
-                            paciente_id = int(pacientes_df[pacientes_df['nome_completo'] == paciente_nome].iloc[0]['id'])
-                            
-                            conn.execute(text("""
-                                INSERT INTO consultas 
-                                (paciente_id, data_consulta, primeira_consulta, valor_consulta, 
-                                 forma_pagamento, observacoes_tecnicas) 
-                                VALUES (:id, :dt, :pr, :vl, :fm, :obs)
-                            """), {
-                                "id": paciente_id,
-                                "dt": data_hora,
-                                "pr": primeira_consulta,
-                                "vl": valor_consulta,
-                                "fm": forma_pagamento,
-                                "obs": observacoes
-                            })
-                            conn.commit()
+                        cur = conn.cursor()
+                        cur.execute(
+                            "SELECT id FROM consultas WHERE data_consulta = %s AND status IN ('agendada', 'realizada')",
+                            (data_hora,)
+                        )
                         
+                        if cur.fetchone() is not None:
+                            st.error("❌ Este horário já está ocupado! Escolha outro.")
+                            st.stop()
+                        
+                        # Inserir consulta
+                        paciente_row = pacientes_df[pacientes_df['nome_completo'] == paciente_nome].iloc[0]
+                        paciente_id = converter_numpy_para_python(paciente_row['id'])
+                        
+                        cur.execute(
+                            """INSERT INTO consultas 
+                            (paciente_id, data_consulta, primeira_consulta, valor_consulta, 
+                             forma_pagamento, observacoes_tecnicas) 
+                            VALUES (%s, %s, %s, %s, %s, %s)""",
+                            (paciente_id, data_hora, primeira_consulta, valor_consulta, 
+                             forma_pagamento, observacoes)
+                        )
+                        conn.commit()
                         st.success(f"✅ Consulta marcada para {data_consulta.strftime('%d/%m/%Y')} às {hora_consulta.strftime('%H:%M')}")
                         st.balloons()
-                        
+                    
     except Exception as e:
         st.error(f"❌ Erro: {e}")
+    finally:
+        if 'conn' in locals() and conn:
+            conn.close()
 
 # 3. VER PACIENTES
 elif menu == "👥 Ver Pacientes":
     st.header("👥 Lista de Pacientes")
     
     try:
-        df = pd.read_sql("""
-            SELECT 
-                nome_completo as "Nome",
-                telefone as "Telefone",
-                email as "Email",
-                profissao as "Profissão",
-                TO_CHAR(data_nascimento, 'DD/MM/YYYY') as "Nascimento",
-                TO_CHAR(data_cadastro, 'DD/MM/YYYY') as "Cadastro"
+        conn = conectar_banco()
+        if conn is None:
+            st.error("❌ Não foi possível conectar ao banco de dados")
+            st.stop()
+            
+        pacientes_df = pd.read_sql("""
+            SELECT id, nome_completo, telefone, email, profissao, queixa_principal, 
+                   TO_CHAR(data_cadastro, 'DD/MM/YYYY') as data_cadastro,
+                   TO_CHAR(data_nascimento, 'DD/MM/YYYY') as data_nascimento
             FROM pacientes 
-            WHERE ativo = TRUE 
+            WHERE ativo = TRUE
             ORDER BY nome_completo
-        """, engine)
+        """, conn)
         
-        if not df.empty:
-            st.dataframe(df, use_container_width=True)
-            st.metric("Total de Pacientes", len(df))
+        if not pacientes_df.empty:
+            st.dataframe(pacientes_df, use_container_width=True)
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Total de Pacientes", len(pacientes_df))
+            with col2:
+                from datetime import datetime
+                primeiro_dia_mes = datetime.now().replace(day=1)
+                
+                cadastros_mes = 0
+                for data_str in pacientes_df['data_cadastro']:
+                    try:
+                        data_obj = datetime.strptime(data_str, '%d/%m/%Y')
+                        if data_obj >= primeiro_dia_mes:
+                            cadastros_mes += 1
+                    except:
+                        pass
+                
+                st.metric("Cadastros este Mês", cadastros_mes)
         else:
             st.info("📝 Nenhum paciente cadastrado")
             
     except Exception as e:
-        st.error(f"❌ Erro: {e}")
+        st.error(f"❌ Erro ao carregar pacientes: {e}")
+    finally:
+        if 'conn' in locals() and conn:
+            conn.close()
 
-# 4. AGENDA
-elif menu == "🗓️ Agenda":
+# 4. AGENDA DA SEMANA  
+elif menu == "🗓️ Agenda da Semana":
     st.header("🗓️ Agenda de Consultas")
     
-    opcao = st.radio("Visualizar:", ["Hoje", "Próximos 7 dias", "Todas"], horizontal=True)
+    opcao_agenda = st.radio("Visualizar:", ["Dia Específico", "Próximos 7 Dias"], horizontal=True)
     
     try:
-        if opcao == "Hoje":
-            query = """
-                SELECT 
-                    p.nome_completo as "Paciente",
-                    TO_CHAR(c.data_consulta, 'HH24:MI') as "Horário",
-                    CASE WHEN c.primeira_consulta THEN 'Primeira' ELSE 'Retorno' END as "Tipo",
-                    c.status as "Status",
-                    c.valor_consulta as "Valor"
-                FROM consultas c 
-                JOIN pacientes p ON c.paciente_id = p.id
-                WHERE DATE(c.data_consulta) = CURRENT_DATE
-                ORDER BY c.data_consulta
-            """
-        elif opcao == "Próximos 7 dias":
-            query = """
-                SELECT 
-                    p.nome_completo as "Paciente",
-                    TO_CHAR(c.data_consulta, 'DD/MM HH24:MI') as "Data/Hora",
-                    CASE WHEN c.primeira_consulta THEN 'Primeira' ELSE 'Retorno' END as "Tipo",
-                    c.status as "Status",
-                    c.valor_consulta as "Valor"
-                FROM consultas c 
-                JOIN pacientes p ON c.paciente_id = p.id
-                WHERE c.data_consulta BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'
-                ORDER BY c.data_consulta
-            """
-        else:
-            query = """
-                SELECT 
-                    p.nome_completo as "Paciente",
-                    TO_CHAR(c.data_consulta, 'DD/MM/YYYY HH24:MI') as "Data/Hora",
-                    CASE WHEN c.primeira_consulta THEN 'Primeira' ELSE 'Retorno' END as "Tipo",
-                    c.status as "Status",
-                    c.valor_consulta as "Valor"
-                FROM consultas c 
-                JOIN pacientes p ON c.paciente_id = p.id
-                ORDER BY c.data_consulta DESC
-                LIMIT 50
-            """
-        
-        df = pd.read_sql(query, engine)
-        
-        if not df.empty:
-            st.dataframe(df, use_container_width=True)
+        conn = conectar_banco()
+        if conn is None:
+            st.error("❌ Não foi possível conectar ao banco de dados")
+            st.stop()
             
-            # Resumo
-            total = len(df)
-            realizadas = len(df[df['Status'] == 'realizada'])
-            st.metric("Total de Consultas", total, f"{realizadas} realizadas")
+        if opcao_agenda == "Dia Específico":
+            data_selecionada = st.date_input("Selecione a data:", value=date.today())
+            
+            agenda_df = pd.read_sql("""
+                SELECT p.nome_completo, c.data_consulta, 
+                       CASE WHEN c.primeira_consulta THEN 'Primeira' ELSE 'Retorno' END as tipo,
+                       c.status, c.valor_consulta,
+                       c.forma_pagamento
+                FROM consultas c
+                JOIN pacientes p ON c.paciente_id = p.id
+                WHERE DATE(c.data_consulta) = %s
+                ORDER BY c.data_consulta
+            """, conn, params=(data_selecionada,))
         else:
-            st.info("📅 Nenhuma consulta encontrada")
+            agenda_df = pd.read_sql("""
+                SELECT p.nome_completo, c.data_consulta, 
+                       CASE WHEN c.primeira_consulta THEN 'Primeira' ELSE 'Retorno' END as tipo,
+                       c.status, c.valor_consulta,
+                       c.forma_pagamento
+                FROM consultas c
+                JOIN pacientes p ON c.paciente_id = p.id
+                WHERE c.data_consulta BETWEEN NOW() AND NOW() + INTERVAL '7 days'
+                ORDER BY c.data_consulta
+            """, conn)
+        
+        if not agenda_df.empty:
+            for _, row in agenda_df.iterrows():
+                with st.container():
+                    col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
+                    with col1:
+                        st.write(f"**{row['nome_completo']}**")
+                    with col2:
+                        st.write(f"🕐 {row['data_consulta'].strftime('%H:%M')}")
+                        st.write(f"📝 {row['tipo']}")
+                    with col3:
+                        status_color = {
+                            'agendada': 'blue',
+                            'realizada': 'green', 
+                            'cancelada': 'red',
+                            'falta': 'orange'
+                        }.get(row['status'], 'gray')
+                        st.markdown(f"**Status:** <span style='color:{status_color}'>{row['status'].title()}</span>", 
+                                  unsafe_allow_html=True)
+                    with col4:
+                        valor = converter_numpy_para_python(row['valor_consulta'])
+                        st.write(f"**{valor:,.0f} CVE**")
+                    st.divider()
+                    
+            total_consultas = len(agenda_df)
+            realizadas = len(agenda_df[agenda_df['status'] == 'realizada'])
+            st.metric("Total de Consultas", total_consultas, f"{realizadas} realizadas")
+        else:
+            st.info("📅 Nenhuma consulta agendada para o período selecionado")
             
     except Exception as e:
-        st.error(f"❌ Erro: {e}")
+        st.error(f"❌ Erro ao carregar agenda: {e}")
+    finally:
+        if 'conn' in locals() and conn:
+            conn.close()
 
-# 5. REGISTRAR CONSULTA
-elif menu == "✅ Registrar Consulta":
+# 5. REGISTRAR CONSULTA REALIZADA
+elif menu == "✅ Registrar Consulta Realizada":
     st.header("✅ Registrar Consulta Realizada")
     
     try:
+        conn = conectar_banco()
+        if conn is None:
+            st.error("❌ Não foi possível conectar ao banco de dados")
+            st.stop()
+            
         consultas_df = pd.read_sql("""
-            SELECT 
-                c.id, 
-                p.nome_completo, 
-                c.data_consulta,
-                c.valor_consulta,
-                c.pagamento_realizado
-            FROM consultas c 
-            JOIN pacientes p ON c.paciente_id = p.id 
-            WHERE c.status = 'agendada' 
+            SELECT c.id, p.nome_completo, c.data_consulta, c.valor_consulta,
+                   c.pagamento_realizado
+            FROM consultas c
+            JOIN pacientes p ON c.paciente_id = p.id
+            WHERE c.status = 'agendada' AND c.data_consulta <= NOW() + INTERVAL '1 hour'
             ORDER BY c.data_consulta
-        """, engine)
+        """, conn)
         
         if not consultas_df.empty:
-            consultas_df['display'] = consultas_df['nome_completo'] + " - " + consultas_df['data_consulta'].dt.strftime('%d/%m/%Y %H:%M')
-            selecao = st.selectbox("Selecione a consulta:", consultas_df['display'])
+            consultas_df['display'] = consultas_df['nome_completo'] + " - " + consultas_df['data_consulta'].dt.strftime('%d/%m %H:%M')
+            consulta_selecionada = st.selectbox("Selecionar Consulta:", consultas_df['display'])
             
-            consulta_info = consultas_df[consultas_df['display'] == selecao].iloc[0]
+            consulta_info = consultas_df[consultas_df['display'] == consulta_selecionada].iloc[0]
             
             st.info(f"""
-            **Detalhes:**
+            **Detalhes da Consulta:**
             - **Paciente:** {consulta_info['nome_completo']}
-            - **Data/Hora:** {consulta_info['data_consulta'].strftime('%d/%m/%Y %H:%M')}
-            - **Valor:** {float(consulta_info['valor_consulta']):,.0f} CVE
+            - **Data/Hora:** {consulta_info['data_consulta'].strftime('%d/%m/%Y %H:%M')} (CVT)
+            - **Valor:** {converter_numpy_para_python(consulta_info['valor_consulta']):,.0f} CVE
             - **Pagamento:** {'✅ Pago' if consulta_info['pagamento_realizado'] else '⏳ Pendente'}
             """)
             
             col1, col2 = st.columns(2)
             with col1:
                 if st.button("✅ Marcar como Realizada", type="primary"):
-                    c_id = int(consulta_info['id'])
-                    with engine.connect() as conn:
-                        conn.execute(text("UPDATE consultas SET status = 'realizada' WHERE id = :id"), {"id": c_id})
-                        conn.commit()
-                    st.success("✅ Consulta registrada!")
+                    consulta_id = converter_numpy_para_python(consulta_info['id'])
+                    
+                    cur = conn.cursor()
+                    cur.execute("UPDATE consultas SET status = 'realizada' WHERE id = %s", (consulta_id,))
+                    conn.commit()
+                    st.success("✅ Consulta registrada como realizada!")
                     st.rerun()
             
             with col2:
                 if not consulta_info['pagamento_realizado']:
                     if st.button("💰 Registrar Pagamento"):
-                        c_id = int(consulta_info['id'])
-                        with engine.connect() as conn:
-                            conn.execute(text("UPDATE consultas SET pagamento_realizado = TRUE WHERE id = :id"), {"id": c_id})
-                            conn.commit()
-                        st.success("💰 Pagamento registrado!")
+                        consulta_id = converter_numpy_para_python(consulta_info['id'])
+                        
+                        cur = conn.cursor()
+                        cur.execute("UPDATE consultas SET pagamento_realizado = TRUE WHERE id = %s", (consulta_id,))
+                        conn.commit()
+                        st.success("💰 Pagamento registrado com sucesso!")
                         st.rerun()
         else:
-            st.info("📝 Nenhuma consulta agendada")
+            st.info("📝 Nenhuma consulta agendada para registrar")
             
     except Exception as e:
-        st.error(f"❌ Erro: {e}")
+        st.error(f"❌ Erro ao registrar consulta: {e}")
+    finally:
+        if 'conn' in locals() and conn:
+            conn.close()
 
 # 6. ESTATÍSTICAS
 elif menu == "📊 Estatísticas":
     st.header("📊 Estatísticas do Consultório")
     
     try:
+        conn = conectar_banco()
+        if conn is None:
+            st.error("❌ Não foi possível conectar ao banco de dados")
+            st.stop()
+            
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            total = pd.read_sql("SELECT COUNT(*) as total FROM pacientes WHERE ativo = TRUE", engine)
-            st.metric("Total de Pacientes", int(total.iloc[0]['total']))
+            total_pacientes = pd.read_sql("SELECT COUNT(*) as total FROM pacientes WHERE ativo = TRUE", conn)
+            st.metric("Total de Pacientes", converter_numpy_para_python(total_pacientes.iloc[0]['total']))
         
         with col2:
             consultas_mes = pd.read_sql("""
                 SELECT COUNT(*) as total 
                 FROM consultas 
-                WHERE EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM CURRENT_DATE)
-            """, engine)
-            st.metric("Consultas este Mês", int(consultas_mes.iloc[0]['total']))
+                WHERE EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM NOW())
+            """, conn)
+            st.metric("Consultas este Mês", converter_numpy_para_python(consultas_mes.iloc[0]['total']))
         
         with col3:
             receita_mes = pd.read_sql("""
                 SELECT COALESCE(SUM(valor_consulta), 0) as total 
                 FROM consultas 
                 WHERE status = 'realizada' 
-                AND EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM CURRENT_DATE)
-            """, engine)
-            st.metric("Receita do Mês (CVE)", f"{float(receita_mes.iloc[0]['total']):,.0f}")
+                AND EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM NOW())
+            """, conn)
+            receita_valor = converter_numpy_para_python(receita_mes.iloc[0]['total'])
+            st.metric("Receita do Mês (CVE)", f"{receita_valor:,.0f}")
         
         with col4:
             taxa_falta = pd.read_sql("""
                 SELECT 
-                    COUNT(CASE WHEN status = 'falta' THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0) as taxa
+                    ROUND(
+                        COUNT(CASE WHEN status = 'falta' THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0),
+                        1
+                    ) as taxa
                 FROM consultas 
-                WHERE EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM CURRENT_DATE)
-            """, engine)
-            taxa = float(taxa_falta.iloc[0]['taxa']) if not pd.isna(taxa_falta.iloc[0]['taxa']) else 0
-            st.metric("Taxa de Faltas", f"{taxa:.1f}%")
+                WHERE EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM NOW())
+            """, conn)
+            taxa_valor = converter_numpy_para_python(taxa_falta.iloc[0]['taxa']) if not pd.isna(taxa_falta.iloc[0]['taxa']) else 0
+            st.metric("Taxa de Faltas (%)", f"{taxa_valor}")
         
-        # Gráfico de status
         st.subheader("📊 Consultas por Status (Este Mês)")
         status_df = pd.read_sql("""
             SELECT status, COUNT(*) as quantidade
             FROM consultas
-            WHERE EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM CURRENT_DATE)
+            WHERE EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM NOW())
             GROUP BY status
-        """, engine)
+        """, conn)
         
         if not status_df.empty:
+            status_df['quantidade'] = status_df['quantidade'].apply(converter_numpy_para_python)
             st.bar_chart(status_df.set_index('status'))
         else:
             st.info("📊 Sem dados para o mês atual")
             
     except Exception as e:
-        st.error(f"❌ Erro: {e}")
+        st.error(f"❌ Erro ao gerar estatísticas: {e}")
+    finally:
+        if 'conn' in locals() and conn:
+            conn.close()
 
-# RODAPÉ
+# RODAPÉ PERSONALIZADO
 st.markdown("---")
 st.markdown(
     "<div style='text-align: center; color: #666; padding: 10px;'>"
-    "🧠 <b>Atendimento Viana</b> - Consultório de Psicologia | "
-    "📞 Contacto: +238 953 67 33 | "
-    "🌐 <a href='http://www.atendimentoviana.cv' target='_blank'>www.atendimentoviana.cv</a><br>"
-    "<small>✅ Data de nascimento desde 1930 | ✅ Horários de aula bloqueados</small>"
+    "🧠 <b>Psicare by Belinda Viana</b> - Consultório de Psicologia | "
+    "📞 Contacto: +238 5949955 | "
+    "📧 Email: contato@atendimentoviana.cv | "
+    "🌐 www.atendimentoviana.cv<br>"
+    "<small>📍 Cabo Verde (CVT) | ✅ Data de nascimento desde 1930 | ✅ Horários de aula bloqueados</small>"
     "</div>", 
     unsafe_allow_html=True
 )
