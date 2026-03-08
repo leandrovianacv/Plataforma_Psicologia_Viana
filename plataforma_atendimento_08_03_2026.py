@@ -118,7 +118,7 @@ def inicializar_banco():
                 data_nascimento DATE,
                 profissao VARCHAR(50),
                 como_chegou VARCHAR(50),
-                queixa_principal TEXT NOT NULL,
+                queixa_principal TEXT,
                 medicacoes_atuais TEXT,
                 observacoes_iniciais TEXT,
                 ativo BOOLEAN DEFAULT TRUE,
@@ -161,7 +161,7 @@ def hora_cv_agora():
     cv_agora = utc_agora - timedelta(hours=1)  # Cabo Verde é UTC-1
     return cv_agora
 
-# Informações de horários no sidebar (APENAS AQUI - removido do layout principal)
+# Informações de horários NO SIDEBAR (APENAS AQUI - NÃO APARECE NO LAYOUT PRINCIPAL)
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 📚 Horários de Aula (Cabo Verde)")
 st.sidebar.info(
@@ -189,7 +189,7 @@ menu = st.sidebar.selectbox("Selecione uma opção:", [
     "📊 Estatísticas"
 ])
 
-# 1. CADASTRAR PACIENTE
+# 1. CADASTRAR PACIENTE - CORRIGIDO (Queixa Principal opcional)
 if menu == "➕ Cadastrar Paciente":
     st.header("👤 Cadastrar Novo Paciente")
     
@@ -204,9 +204,9 @@ if menu == "➕ Cadastrar Paciente":
             # Data de nascimento desde 1930
             data_nascimento = st.date_input(
                 "Data de Nascimento", 
-                min_value=date(1930, 1, 1),  # Permite anos desde 1930
+                min_value=date(1930, 1, 1),
                 max_value=date.today(),
-                value=None,  # Sem valor padrão
+                value=None,
                 format="DD/MM/YYYY"
             )
             
@@ -214,8 +214,9 @@ if menu == "➕ Cadastrar Paciente":
             profissao = st.text_input("Profissão", placeholder="Profissão atual")
             como_chegou = st.selectbox("Como chegou até nós", 
                                      ["Indicação", "Internet", "Redes Sociais", "Outro"])
-            queixa_principal = st.text_area("Queixa Principal*", 
-                                          placeholder="Descreva a queixa principal...", 
+            # CORREÇÃO: Queixa Principal agora é opcional
+            queixa_principal = st.text_area("Queixa Principal", 
+                                          placeholder="Descreva a queixa principal (opcional)...", 
                                           height=100)
         
         medicacoes = st.text_input("Medicações Atuais", placeholder="Medicações em uso")
@@ -223,8 +224,11 @@ if menu == "➕ Cadastrar Paciente":
                                  placeholder="Observações relevantes...",
                                  height=80)
         
+        # Mostrar campos obrigatórios
+        st.caption("* Campos obrigatórios: Nome Completo e Telefone")
+        
         if st.form_submit_button("💾 Salvar Paciente"):
-            if nome and telefone and queixa_principal:
+            if nome and telefone:  # Apenas nome e telefone são obrigatórios
                 try:
                     conn = conectar_banco()
                     cur = conn.cursor()
@@ -245,7 +249,7 @@ if menu == "➕ Cadastrar Paciente":
                     if conn:
                         conn.close()
             else:
-                st.error("❌ Preencha os campos obrigatórios (*)")
+                st.error("❌ Preencha os campos obrigatórios: Nome Completo e Telefone")
 
 # 2. MARCAR CONSULTA
 elif menu == "📅 Marcar Consulta":
@@ -398,9 +402,14 @@ elif menu == "👥 Ver Pacientes":
             st.stop()
             
         pacientes_df = pd.read_sql("""
-            SELECT id, nome_completo, telefone, email, profissao, queixa_principal, 
-                   TO_CHAR(data_cadastro, 'DD/MM/YYYY') as data_cadastro,
-                   TO_CHAR(data_nascimento, 'DD/MM/YYYY') as data_nascimento
+            SELECT 
+                nome_completo as "Nome",
+                telefone as "Telefone",
+                email as "Email",
+                profissao as "Profissão",
+                TO_CHAR(data_nascimento, 'DD/MM/YYYY') as "Nascimento",
+                queixa_principal as "Queixa Principal",
+                TO_CHAR(data_cadastro, 'DD/MM/YYYY') as "Cadastro"
             FROM pacientes 
             WHERE ativo = TRUE
             ORDER BY nome_completo
@@ -409,22 +418,14 @@ elif menu == "👥 Ver Pacientes":
         if not pacientes_df.empty:
             st.dataframe(pacientes_df, use_container_width=True)
             
-            col1, col2, col3 = st.columns(3)
+            col1, col2 = st.columns(2)
             with col1:
                 st.metric("Total de Pacientes", len(pacientes_df))
             with col2:
                 from datetime import datetime
                 primeiro_dia_mes = datetime.now().replace(day=1)
                 
-                cadastros_mes = 0
-                for data_str in pacientes_df['data_cadastro']:
-                    try:
-                        data_obj = datetime.strptime(data_str, '%d/%m/%Y')
-                        if data_obj >= primeiro_dia_mes:
-                            cadastros_mes += 1
-                    except:
-                        pass
-                
+                cadastros_mes = len(pacientes_df[pacientes_df['Cadastro'] >= primeiro_dia_mes.strftime('%d/%m/%Y')])
                 st.metric("Cadastros este Mês", cadastros_mes)
         else:
             st.info("📝 Nenhum paciente cadastrado")
@@ -439,7 +440,7 @@ elif menu == "👥 Ver Pacientes":
 elif menu == "🗓️ Agenda da Semana":
     st.header("🗓️ Agenda de Consultas")
     
-    opcao_agenda = st.radio("Visualizar:", ["Dia Específico", "Próximos 7 Dias"], horizontal=True)
+    opcao_agenda = st.radio("Visualizar:", ["Hoje", "Amanhã", "Próximos 7 Dias"], horizontal=True)
     
     try:
         conn = conectar_banco()
@@ -447,9 +448,8 @@ elif menu == "🗓️ Agenda da Semana":
             st.error("❌ Não foi possível conectar ao banco de dados")
             st.stop()
             
-        if opcao_agenda == "Dia Específico":
-            data_selecionada = st.date_input("Selecione a data:", value=date.today())
-            
+        if opcao_agenda == "Hoje":
+            data_filtro = date.today()
             agenda_df = pd.read_sql("""
                 SELECT p.nome_completo, c.data_consulta, 
                        CASE WHEN c.primeira_consulta THEN 'Primeira' ELSE 'Retorno' END as tipo,
@@ -457,9 +457,20 @@ elif menu == "🗓️ Agenda da Semana":
                        c.forma_pagamento
                 FROM consultas c
                 JOIN pacientes p ON c.paciente_id = p.id
-                WHERE DATE(c.data_consulta) = %s
+                WHERE DATE(c.data_consulta) = CURRENT_DATE
                 ORDER BY c.data_consulta
-            """, conn, params=(data_selecionada,))
+            """, conn)
+        elif opcao_agenda == "Amanhã":
+            agenda_df = pd.read_sql("""
+                SELECT p.nome_completo, c.data_consulta, 
+                       CASE WHEN c.primeira_consulta THEN 'Primeira' ELSE 'Retorno' END as tipo,
+                       c.status, c.valor_consulta,
+                       c.forma_pagamento
+                FROM consultas c
+                JOIN pacientes p ON c.paciente_id = p.id
+                WHERE DATE(c.data_consulta) = CURRENT_DATE + INTERVAL '1 day'
+                ORDER BY c.data_consulta
+            """, conn)
         else:
             agenda_df = pd.read_sql("""
                 SELECT p.nome_completo, c.data_consulta, 
@@ -468,7 +479,7 @@ elif menu == "🗓️ Agenda da Semana":
                        c.forma_pagamento
                 FROM consultas c
                 JOIN pacientes p ON c.paciente_id = p.id
-                WHERE c.data_consulta BETWEEN NOW() AND NOW() + INTERVAL '7 days'
+                WHERE c.data_consulta BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'
                 ORDER BY c.data_consulta
             """, conn)
         
@@ -508,7 +519,7 @@ elif menu == "🗓️ Agenda da Semana":
         if 'conn' in locals() and conn:
             conn.close()
 
-# 5. REGISTRAR CONSULTA REALIZADA - CORRIGIDO com opção "Paciente não compareceu"
+# 5. REGISTRAR CONSULTA REALIZADA
 elif menu == "✅ Registrar Consulta Realizada":
     st.header("✅ Registrar Consulta Realizada")
     
@@ -523,7 +534,7 @@ elif menu == "✅ Registrar Consulta Realizada":
                    c.pagamento_realizado, c.status
             FROM consultas c
             JOIN pacientes p ON c.paciente_id = p.id
-            WHERE c.status = 'agendada' AND c.data_consulta <= NOW() + INTERVAL '1 day'
+            WHERE c.status = 'agendada' AND c.data_consulta <= CURRENT_DATE + INTERVAL '1 day'
             ORDER BY c.data_consulta
         """, conn)
         
@@ -604,7 +615,7 @@ elif menu == "📊 Estatísticas":
             consultas_mes = pd.read_sql("""
                 SELECT COUNT(*) as total 
                 FROM consultas 
-                WHERE EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM NOW())
+                WHERE EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM CURRENT_DATE)
             """, conn)
             st.metric("Consultas este Mês", converter_numpy_para_python(consultas_mes.iloc[0]['total']))
         
@@ -613,7 +624,7 @@ elif menu == "📊 Estatísticas":
                 SELECT COALESCE(SUM(valor_consulta), 0) as total 
                 FROM consultas 
                 WHERE status = 'realizada' 
-                AND EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM NOW())
+                AND EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM CURRENT_DATE)
             """, conn)
             receita_valor = converter_numpy_para_python(receita_mes.iloc[0]['total'])
             st.metric("Receita do Mês (CVE)", f"{receita_valor:,.0f}")
@@ -626,7 +637,7 @@ elif menu == "📊 Estatísticas":
                         1
                     ) as taxa
                 FROM consultas 
-                WHERE EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM NOW())
+                WHERE EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM CURRENT_DATE)
             """, conn)
             taxa_valor = converter_numpy_para_python(taxa_falta.iloc[0]['taxa']) if not pd.isna(taxa_falta.iloc[0]['taxa']) else 0
             st.metric("Taxa de Faltas (%)", f"{taxa_valor}")
@@ -635,7 +646,7 @@ elif menu == "📊 Estatísticas":
         status_df = pd.read_sql("""
             SELECT status, COUNT(*) as quantidade
             FROM consultas
-            WHERE EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM NOW())
+            WHERE EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM CURRENT_DATE)
             GROUP BY status
         """, conn)
         
@@ -651,11 +662,11 @@ elif menu == "📊 Estatísticas":
         if 'conn' in locals() and conn:
             conn.close()
 
-# RODAPÉ PERSONALIZADO (sem a seção de horários)
+# RODAPÉ PERSONALIZADO (SEM a seção de horários)
 st.markdown("---")
 st.markdown(
     "<div style='text-align: center; color: #666; padding: 10px;'>"
-    "🧠 <b>Psicare by Belinda Viana</b>"
+    "🧠 <b>Psicare by Belinda Viana</b> - Consultório de Psicologia | "
     "📞 Contacto: +238 5949955 | "
     "📧 Email: contato@atendimentoviana.cv | "
     "🌐 www.atendimentoviana.cv"
