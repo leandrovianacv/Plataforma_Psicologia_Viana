@@ -19,10 +19,10 @@ def converter_numpy_para_python(valor):
     else:
         return valor
 
-# CORREÇÃO 2: Função para verificar horários de aula (Cabo Verde)
+# CORREÇÃO 2: Função para verificar horários de aula (Cabo Verde - UTC-1)
 def eh_horario_de_aula(data_consulta, hora_consulta):
     """
-    Verifica se o horário específico é de aula (Cabo Verde - UTC-1)
+    Verifica se o horário específico é de aula (Cabo Verde)
     Retorna True se for horário de aula, False caso contrário
     """
     dia_semana = data_consulta.weekday()  # 0=Segunda, 1=Terça, 2=Quarta, 3=Quinta, 4=Sexta
@@ -30,24 +30,27 @@ def eh_horario_de_aula(data_consulta, hora_consulta):
     # Converter hora para minutos
     minutos = hora_consulta.hour * 60 + hora_consulta.minute
     
-    # Segunda-feira: 14:00 às 20:00 (aula)
-    if dia_semana == 0:  # Segunda
-        if minutos >= 14*60 and minutos < 20*60:
+    # SEGUNDA-FEIRA: 14:00 às 20:00 (bloquear TODOS os horários neste intervalo)
+    if dia_semana == 0:
+        if minutos >= 14*60 and minutos < 20*60:  # 14:00 até 19:59
+            return True
+        # Bloquear também 20:00 exato se existir
+        if minutos == 20*60:
             return True
     
-    # Terça-feira: 9:30 às 11:10 (aula)
-    elif dia_semana == 1:  # Terça
-        if minutos >= 9*60+30 and minutos < 11*60+10:
+    # TERÇA-FEIRA: 9:30 às 11:10
+    elif dia_semana == 1:
+        if minutos >= 9*60+30 and minutos <= 11*60+10:  # 9:30 até 11:10
             return True
     
-    # Quinta-feira: 14:00 às 18:00 (aula)
-    elif dia_semana == 3:  # Quinta
-        if minutos >= 14*60 and minutos < 18*60:
+    # QUINTA-FEIRA: 14:00 às 18:00
+    elif dia_semana == 3:
+        if minutos >= 14*60 and minutos < 18*60:  # 14:00 até 17:59
             return True
     
-    # Sexta-feira: 7:30 às 9:30 (aula)
-    elif dia_semana == 4:  # Sexta
-        if minutos >= 7*60+30 and minutos < 9*60+30:
+    # SEXTA-FEIRA: 7:30 às 9:30
+    elif dia_semana == 4:
+        if minutos >= 7*60+30 and minutos < 9*60+30:  # 7:30 até 9:29
             return True
     
     return False
@@ -63,7 +66,6 @@ st.set_page_config(
 def conectar_banco():
     """Conecta ao Supabase usando Session Pooler - APENAS via secrets"""
     try:
-        # APENAS usa secrets - NUNCA coloque senha no código!
         if "DB_URL" in st.secrets:
             db_url = st.secrets["DB_URL"]
             import re
@@ -78,7 +80,6 @@ def conectar_banco():
                     password=password
                 )
         else:
-            # Para teste local - usa variável de ambiente (mais seguro)
             db_url = os.getenv("DB_URL")
             if db_url:
                 import re
@@ -99,7 +100,7 @@ def conectar_banco():
         st.error(f"Erro ao conectar: {e}")
         return None
 
-# Inicializar banco (criar tabelas se não existirem)
+# Inicializar banco
 def inicializar_banco():
     """Garante que as tabelas necessárias existam"""
     try:
@@ -109,7 +110,6 @@ def inicializar_banco():
             
         cur = conn.cursor()
         
-        # Tabela pacientes
         cur.execute("""
             CREATE TABLE IF NOT EXISTS pacientes (
                 id SERIAL PRIMARY KEY,
@@ -127,7 +127,6 @@ def inicializar_banco():
             );
         """)
         
-        # Tabela consultas
         cur.execute("""
             CREATE TABLE IF NOT EXISTS consultas (
                 id SERIAL PRIMARY KEY,
@@ -156,17 +155,24 @@ if inicializar_banco():
 else:
     st.sidebar.error("❌ Falha na conexão com Supabase")
 
-# Informações de horários no sidebar (Cabo Verde)
+# Função para obter hora atual de Cabo Verde (UTC-1)
+def hora_cv_agora():
+    """Retorna a data e hora atual em Cabo Verde (UTC-1)"""
+    utc_agora = datetime.utcnow()
+    cv_agora = utc_agora - timedelta(hours=1)  # Cabo Verde é UTC-1
+    return cv_agora
+
+# Informações de horários no sidebar
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 📚 Horários de Aula (Cabo Verde)")
 st.sidebar.info(
     "**Horários bloqueados:**\n"
-    "• Segunda: 14:00-20:00\n"
-    "• Terça: 9:30-11:10\n"
-    "• Quinta: 14:00-18:00\n"
-    "• Sexta: 7:30-9:30\n\n"
-    f"**Data/Hora atual:**\n"
-    f"{datetime.now().strftime('%d/%m/%Y %H:%M')} (CVT)"
+    "• Segunda: 14:00 às 20:00\n"
+    "• Terça: 9:30 às 11:10\n"
+    "• Quinta: 14:00 às 18:00\n"
+    "• Sexta: 7:30 às 9:30\n\n"
+    f"**Hora atual em CV:**\n"
+    f"{hora_cv_agora().strftime('%d/%m/%Y %H:%M')}"
 )
 
 # HEADER PERSONALIZADO
@@ -196,7 +202,7 @@ if menu == "➕ Cadastrar Paciente":
             telefone = st.text_input("Telefone*", placeholder="+238 XXX XX XX") 
             email = st.text_input("Email", placeholder="paciente@email.cv")
             
-            # CORREÇÃO: Data de nascimento desde 1930
+            # Data de nascimento desde 1930
             data_nascimento = st.date_input(
                 "Data de Nascimento", 
                 min_value=date(1930, 1, 1),  # Permite anos desde 1930
@@ -242,7 +248,7 @@ if menu == "➕ Cadastrar Paciente":
             else:
                 st.error("❌ Preencha os campos obrigatórios (*)")
 
-# 2. MARCAR CONSULTA - COM BLOQUEIO DE HORÁRIOS DE AULA
+# 2. MARCAR CONSULTA - CORRIGIDO (bloqueio de horários de aula)
 elif menu == "📅 Marcar Consulta":
     st.header("📅 Marcar Nova Consulta")
     
@@ -264,68 +270,55 @@ elif menu == "📅 Marcar Consulta":
                     paciente_nome = st.selectbox("Paciente*", pacientes_df['nome_completo'])
                     data_consulta = st.date_input("Data*", min_value=date.today())
                     
-                    # CORREÇÃO: Gerar horários disponíveis (excluindo aulas)
-                    dia_semana = data_consulta.weekday()
-                    
-                    # Gerar todos os horários possíveis (8h às 20h, de 30 em 30 min)
+                    # CORREÇÃO: Gerar horários de 30 em 30 minutos
                     todos_horarios = []
-                    for hora in range(8, 21):
+                    for hora in range(8, 21):  # 8h às 20h
                         for minuto in [0, 30]:
                             if hora == 20 and minuto > 0:
                                 continue
-                            todos_horarios.append(time(hora, minuto))
+                            horario = time(hora, minuto)
+                            todos_horarios.append(horario)
                     
-                    # Filtrar apenas os que NÃO são horários de aula
+                    # Filtrar apenas horários que NÃO são de aula
                     horarios_disponiveis = []
+                    horarios_bloqueados = []
+                    
                     for horario in todos_horarios:
-                        if not eh_horario_de_aula(data_consulta, horario):
+                        if eh_horario_de_aula(data_consulta, horario):
+                            horarios_bloqueados.append(horario)
+                            # DEBUG: print para verificar quais estão sendo bloqueados
+                            print(f"BLOQUEADO: {data_consulta} - {horario.strftime('%H:%M')}")
+                        else:
                             horarios_disponiveis.append(horario)
                     
-                    # Verificar horários já ocupados no banco
-                    horarios_livres = []
-                    horarios_ocupados = []
+                    # Mostrar contagem de horários bloqueados
+                    dia_semana = data_consulta.weekday()
                     
-                    for horario in horarios_disponiveis:
-                        data_hora = datetime.combine(data_consulta, horario)
-                        cur = conn.cursor()
-                        cur.execute(
-                            "SELECT id FROM consultas WHERE data_consulta = %s AND status IN ('agendada', 'realizada')",
-                            (data_hora,)
-                        )
-                        if cur.fetchone() is None:
-                            horarios_livres.append(horario)
-                        else:
-                            horarios_ocupados.append(horario)
+                    # Mensagens específicas por dia
+                    if dia_semana == 0:
+                        st.warning(f"⚠️ Segunda-feira: {len(horarios_bloqueados)} horários bloqueados (14:00-20:00)")
+                    elif dia_semana == 1:
+                        st.warning(f"⚠️ Terça-feira: {len(horarios_bloqueados)} horários bloqueados (9:30-11:10)")
+                    elif dia_semana == 3:
+                        st.warning(f"⚠️ Quinta-feira: {len(horarios_bloqueados)} horários bloqueados (14:00-18:00)")
+                    elif dia_semana == 4:
+                        st.warning(f"⚠️ Sexta-feira: {len(horarios_bloqueados)} horários bloqueados (7:30-9:30)")
                     
-                    # Mostrar estatísticas
-                    col_info1, col_info2, col_info3 = st.columns(3)
-                    with col_info1:
-                        st.metric("Horários disponíveis", len(horarios_livres))
-                    with col_info2:
-                        st.metric("Horários de aula", len(todos_horarios) - len(horarios_disponiveis))
-                    with col_info3:
-                        st.metric("Já agendados", len(horarios_ocupados))
-                    
-                    # Selecionar horário
-                    if not horarios_livres:
-                        st.error("❌ Não há horários disponíveis para esta data!")
-                        hora_consulta = None
-                    else:
+                    # Mostrar lista de horários disponíveis (APENAS os que não são de aula)
+                    if horarios_disponiveis:
                         hora_consulta = st.selectbox(
                             "Horário*", 
-                            horarios_livres,
+                            horarios_disponiveis,
                             format_func=lambda x: x.strftime('%H:%M')
                         )
-                    
-                    # Aviso sobre horários de aula
-                    if dia_semana == 0:
-                        st.warning("⚠️ Segunda-feira: Horários das 14h às 20h são de AULA (bloqueados)")
-                    elif dia_semana == 1:
-                        st.warning("⚠️ Terça-feira: Horários das 9:30 às 11:10 são de AULA (bloqueados)")
-                    elif dia_semana == 3:
-                        st.warning("⚠️ Quinta-feira: Horários das 14h às 18h são de AULA (bloqueados)")
-                    elif dia_semana == 4:
-                        st.warning("⚠️ Sexta-feira: Horários das 7:30 às 9:30 são de AULA (bloqueados)")
+                        
+                        # Mostrar horários bloqueados em texto menor (opcional)
+                        if horarios_bloqueados:
+                            horarios_bloq_str = ", ".join([h.strftime('%H:%M') for h in horarios_bloqueados])
+                            st.caption(f"🚫 Horários de aula bloqueados: {horarios_bloq_str}")
+                    else:
+                        st.error("❌ Não há horários disponíveis para esta data!")
+                        hora_consulta = None
                 
                 with col2: 
                     primeira_consulta = st.checkbox("Primeira Consulta", value=True)
@@ -343,14 +336,14 @@ elif menu == "📅 Marcar Consulta":
                     if hora_consulta is None:
                         st.error("❌ Selecione um horário válido!")
                     else:
-                        # Verificações finais
+                        # Verificação final
                         if eh_horario_de_aula(data_consulta, hora_consulta):
                             st.error("❌ Este é um horário de aula! Escolha outro horário.")
                             st.stop()
                         
                         data_hora = datetime.combine(data_consulta, hora_consulta)
                         
-                        # Verificar se horário ainda está livre
+                        # Verificar se horário já está ocupado
                         cur = conn.cursor()
                         cur.execute(
                             "SELECT id FROM consultas WHERE data_consulta = %s AND status IN ('agendada', 'realizada')",
@@ -374,7 +367,7 @@ elif menu == "📅 Marcar Consulta":
                              forma_pagamento, observacoes)
                         )
                         conn.commit()
-                        st.success(f"✅ Consulta marcada para {data_consulta.strftime('%d/%m/%Y')} às {hora_consulta.strftime('%H:%M')}")
+                        st.success(f"✅ Consulta marcada para {data_consulta.strftime('%d/%m/%Y')} às {hora_consulta.strftime('%H:%M')} (CVT)")
                         st.balloons()
                     
     except Exception as e:
@@ -641,7 +634,7 @@ st.markdown(
     "📞 Contacto: +238 5949955 | "
     "📧 Email: contato@atendimentoviana.cv | "
     "🌐 www.atendimentoviana.cv<br>"
-    "<small>📍 Cabo Verde (CVT) | ✅ Data de nascimento desde 1930 | ✅ Horários de aula bloqueados</small>"
-    "</div>", 
+    "<small>📍 Cabo Verde (UTC-1) | Hora atual: {} | ✅ Horários de aula bloqueados</small>"
+    "</div>".format(hora_cv_agora().strftime('%H:%M')), 
     unsafe_allow_html=True
 )
