@@ -235,7 +235,7 @@ if menu == "➕ Cadastrar Paciente":
             else:
                 st.error("❌ Preencha os campos obrigatórios: Nome Completo e Telefone")
 
-# 2. MARCAR CONSULTA - COM BLOQUEIO DE HORÁRIOS DE AULA
+# 2. MARCAR CONSULTA - CORRIGIDO (BLOQUEIA HORÁRIOS DE AULA)
 elif menu == "📅 Marcar Consulta":
     st.header("📅 Marcar Nova Consulta")
     
@@ -269,10 +269,12 @@ elif menu == "📅 Marcar Consulta":
                     # 1. Remover horários de aula
                     # 2. Remover horários já ocupados
                     horarios_disponiveis = []
+                    horarios_bloqueados = []
                     
                     for horario in todos_horarios:
                         # Verificar se é horário de aula
                         if eh_horario_de_aula(data_consulta, horario):
+                            horarios_bloqueados.append(horario)
                             continue
                         
                         # Verificar se já está ocupado
@@ -285,7 +287,7 @@ elif menu == "📅 Marcar Consulta":
                         if cur.fetchone() is None:
                             horarios_disponiveis.append(horario)
                     
-                    # MOSTRAR SELECTBOX COM HORÁRIOS DISPONÍVEIS
+                    # MOSTRAR SELECTBOX APENAS COM HORÁRIOS DISPONÍVEIS
                     if horarios_disponiveis:
                         hora_consulta = st.selectbox(
                             "Horário*", 
@@ -293,8 +295,8 @@ elif menu == "📅 Marcar Consulta":
                             format_func=lambda x: x.strftime('%H:%M')
                         )
                         
-                        # Mostrar quantos horários disponíveis
-                        st.caption(f"📊 {len(horarios_disponiveis)} horários disponíveis")
+                        # Mostrar estatísticas
+                        st.caption(f"📊 {len(horarios_disponiveis)} horários disponíveis | {len(horarios_bloqueados)} horários de aula bloqueados")
                     else:
                         st.error("❌ Não há horários disponíveis para esta data!")
                         hora_consulta = None
@@ -315,14 +317,13 @@ elif menu == "📅 Marcar Consulta":
                     if hora_consulta is None:
                         st.error("❌ Selecione um horário válido!")
                     else:
-                        # Verificar se é horário de aula (segurança)
+                        # VERIFICAÇÃO 1: É horário de aula?
                         if eh_horario_de_aula(data_consulta, hora_consulta):
-                            st.error("❌ Este é um horário de aula! Escolha outro horário.")
+                            st.error("❌ Este é um horário de aula! Não é possível agendar.")
                             st.stop()
                         
+                        # VERIFICAÇÃO 2: Já está ocupado?
                         data_hora = datetime.combine(data_consulta, hora_consulta)
-                        
-                        # Verificar se horário está ocupado (segurança)
                         cur.execute(
                             "SELECT id FROM consultas WHERE data_consulta = %s AND status IN ('agendada', 'realizada')",
                             (data_hora,)
@@ -332,7 +333,7 @@ elif menu == "📅 Marcar Consulta":
                             st.error("❌ Este horário já está ocupado! Escolha outro.")
                             st.stop()
                         
-                        # Inserir consulta
+                        # TUDO OK - Inserir consulta
                         paciente_row = pacientes_df[pacientes_df['nome_completo'] == paciente_nome].iloc[0]
                         paciente_id = converter_numpy_para_python(paciente_row['id'])
                         
@@ -353,7 +354,6 @@ elif menu == "📅 Marcar Consulta":
     finally:
         if 'conn' in locals() and conn:
             conn.close()
-
 # 3. VER PACIENTES
 elif menu == "👥 Ver Pacientes":
     st.header("👥 Lista de Pacientes")
