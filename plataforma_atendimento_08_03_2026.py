@@ -325,7 +325,8 @@ elif menu == "📅 Marcar Consulta":
                     dia_semana = data_consulta.weekday()
                     
                     if data_consulta == data_atual_cv:
-                                         
+                        st.info(f"🕐 Hoje são {hora_atual_cv.strftime('%H:%M')} - Horários anteriores foram bloqueados")
+                    
                     if dia_semana == 0:
                         st.warning(f"⚠️ Segunda-feira: {len([h for h in todos_horarios if eh_horario_de_aula(data_consulta, h)])} horários de aula bloqueados (14:00-20:00)")
                     elif dia_semana == 1:
