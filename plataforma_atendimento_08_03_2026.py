@@ -146,6 +146,7 @@ if menu == "➕ Cadastrar Paciente":
             telefone = st.text_input("Telefone*", placeholder="+238 XXX XX XX") 
             email = st.text_input("Email", placeholder="paciente@email.cv")
             
+            # Data de nascimento desde 1930
             data_nascimento = st.date_input(
                 "Data de Nascimento", 
                 min_value=date(1930, 1, 1),
@@ -193,7 +194,7 @@ if menu == "➕ Cadastrar Paciente":
             else:
                 st.error("❌ Preencha os campos obrigatórios: Nome Completo e Telefone")
 
-# 2. MARCAR CONSULTA - CORREÇÃO DA LÓGICA DE DATA/HORA
+# 2. MARCAR CONSULTA - SEM NENHUM FILTRO DE HORÁRIO
 elif menu == "📅 Marcar Consulta":
     st.header("📅 Marcar Nova Consulta")
     
@@ -215,7 +216,7 @@ elif menu == "📅 Marcar Consulta":
                     paciente_nome = st.selectbox("Paciente*", pacientes_df['nome_completo'])
                     data_consulta = st.date_input("Data*", min_value=date.today())
                     
-                    # 1. Gerar todos os horários padrão (8h às 20h)
+                    # GERAR TODOS OS HORÁRIOS POSSÍVEIS (8h às 20h)
                     todos_horarios = []
                     for hora in range(8, 21):
                         for minuto in [0, 30]:
@@ -223,28 +224,11 @@ elif menu == "📅 Marcar Consulta":
                                 continue
                             todos_horarios.append(time(hora, minuto))
                     
-                    # 2. Determinar horários permitidos baseados na data selecionada
-                    agora_utc = datetime.utcnow()
-                    agora_cv = agora_utc - timedelta(hours=1)
-                    hoje_cv = agora_cv.date()
-                    hora_cv = agora_cv.time()
-
-                    horarios_permitidos = []
-                    
-                    # Se a data selecionada for HOJE, filtra apenas horários futuros
-                    if data_consulta == hoje_cv:
-                        for h in todos_horarios:
-                            if h > hora_cv:
-                                horarios_permitidos.append(h)
-                    # Se for AMANHÃ ou qualquer dia futuro, permite TODOS os horários da grade
-                    else:
-                        horarios_permitidos = todos_horarios
-
-                    # 3. Remover horários já ocupados no banco de dados
+                    # REMOVER APENAS HORÁRIOS JÁ OCUPADOS
                     horarios_livres = []
-                    cur = conn.cursor()
-                    for horario in horarios_permitidos:
+                    for horario in todos_horarios:
                         data_hora = datetime.combine(data_consulta, horario)
+                        cur = conn.cursor()
                         cur.execute(
                             "SELECT id FROM consultas WHERE data_consulta = %s AND status IN ('agendada', 'realizada')",
                             (data_hora,)
@@ -252,6 +236,7 @@ elif menu == "📅 Marcar Consulta":
                         if cur.fetchone() is None:
                             horarios_livres.append(horario)
                     
+                    # MOSTRAR SELECTBOX COM TODOS OS HORÁRIOS
                     if horarios_livres:
                         hora_consulta = st.selectbox(
                             "Horário*", 
@@ -280,28 +265,31 @@ elif menu == "📅 Marcar Consulta":
                     else:
                         data_hora = datetime.combine(data_consulta, hora_consulta)
                         
+                        # Verificar se horário está ocupado (segurança)
                         cur.execute(
                             "SELECT id FROM consultas WHERE data_consulta = %s AND status IN ('agendada', 'realizada')",
                             (data_hora,)
                         )
                         
                         if cur.fetchone() is not None:
-                            st.error("❌ Este horário acabou de ser ocupado! Escolha outro.")
-                        else:
-                            paciente_row = pacientes_df[pacientes_df['nome_completo'] == paciente_nome].iloc[0]
-                            paciente_id = converter_numpy_para_python(paciente_row['id'])
-                            
-                            cur.execute(
-                                """INSERT INTO consultas 
-                                (paciente_id, data_consulta, primeira_consulta, valor_consulta, 
-                                 forma_pagamento, observacoes_tecnicas) 
-                                VALUES (%s, %s, %s, %s, %s, %s)""",
-                                (paciente_id, data_hora, primeira_consulta, valor_consulta, 
-                                 forma_pagamento, observacoes)
-                            )
-                            conn.commit()
-                            st.success(f"✅ Consulta marcada para {data_consulta.strftime('%d/%m/%Y')} às {hora_consulta.strftime('%H:%M')}")
-                            st.balloons()
+                            st.error("❌ Este horário já está ocupado! Escolha outro.")
+                            st.stop()
+                        
+                        # Inserir consulta
+                        paciente_row = pacientes_df[pacientes_df['nome_completo'] == paciente_nome].iloc[0]
+                        paciente_id = converter_numpy_para_python(paciente_row['id'])
+                        
+                        cur.execute(
+                            """INSERT INTO consultas 
+                            (paciente_id, data_consulta, primeira_consulta, valor_consulta, 
+                             forma_pagamento, observacoes_tecnicas) 
+                            VALUES (%s, %s, %s, %s, %s, %s)""",
+                            (paciente_id, data_hora, primeira_consulta, valor_consulta, 
+                             forma_pagamento, observacoes)
+                        )
+                        conn.commit()
+                        st.success(f"✅ Consulta marcada para {data_consulta.strftime('%d/%m/%Y')} às {hora_consulta.strftime('%H:%M')}")
+                        st.balloons()
                     
     except Exception as e:
         st.error(f"❌ Erro: {e}")
@@ -335,16 +323,17 @@ elif menu == "👥 Ver Pacientes":
         
         if not pacientes_df.empty:
             st.dataframe(pacientes_df, use_container_width=True)
+            
             col1, col2 = st.columns(2)
             with col1:
                 st.metric("Total de Pacientes", len(pacientes_df))
             with col2:
-                hoje_cv = (datetime.utcnow() - timedelta(hours=1)).date()
-                primeiro_dia_mes = hoje_cv.replace(day=1)
+                from datetime import datetime
+                primeiro_dia_mes = datetime.now().replace(day=1)
                 cadastros_mes = 0
                 for data_str in pacientes_df['Cadastro']:
                     try:
-                        data_obj = datetime.strptime(data_str, '%d/%m/%Y').date()
+                        data_obj = datetime.strptime(data_str, '%d/%m/%Y')
                         if data_obj >= primeiro_dia_mes:
                             cadastros_mes += 1
                     except:
@@ -359,7 +348,7 @@ elif menu == "👥 Ver Pacientes":
         if 'conn' in locals() and conn:
             conn.close()
 
-# 4. AGENDA DA SEMANA
+# 4. AGENDA DA SEMANA - COM OPÇÃO DE CANCELAR
 elif menu == "🗓️ Agenda da Semana":
     st.header("🗓️ Agenda de Consultas")
     
@@ -379,7 +368,7 @@ elif menu == "🗓️ Agenda da Semana":
                        c.forma_pagamento
                 FROM consultas c
                 JOIN pacientes p ON c.paciente_id = p.id
-                WHERE DATE(c.data_consulta AT TIME ZONE 'UTC-1') = CURRENT_DATE
+                WHERE DATE(c.data_consulta) = CURRENT_DATE
                 ORDER BY c.data_consulta
             """, conn)
         elif opcao_agenda == "Amanhã":
@@ -390,7 +379,7 @@ elif menu == "🗓️ Agenda da Semana":
                        c.forma_pagamento
                 FROM consultas c
                 JOIN pacientes p ON c.paciente_id = p.id
-                WHERE DATE(c.data_consulta AT TIME ZONE 'UTC-1') = CURRENT_DATE + INTERVAL '1 day'
+                WHERE DATE(c.data_consulta) = CURRENT_DATE + INTERVAL '1 day'
                 ORDER BY c.data_consulta
             """, conn)
         else:
@@ -401,43 +390,84 @@ elif menu == "🗓️ Agenda da Semana":
                        c.forma_pagamento
                 FROM consultas c
                 JOIN pacientes p ON c.paciente_id = p.id
-                WHERE (c.data_consulta AT TIME ZONE 'UTC-1') BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'
+                WHERE c.data_consulta BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'
                 ORDER BY c.data_consulta
             """, conn)
         
         if not agenda_df.empty:
+            # Criar colunas para os cabeçalhos
             col_header1, col_header2, col_header3, col_header4, col_header5 = st.columns([3, 1, 1, 1, 1])
-            with col_header1: st.markdown("**Paciente**")
-            with col_header2: st.markdown("**Horário**")
-            with col_header3: st.markdown("**Tipo**")
-            with col_header4: st.markdown("**Status**")
-            with col_header5: st.markdown("**Ações**")
+            with col_header1:
+                st.markdown("**Paciente**")
+            with col_header2:
+                st.markdown("**Horário**")
+            with col_header3:
+                st.markdown("**Tipo**")
+            with col_header4:
+                st.markdown("**Status**")
+            with col_header5:
+                st.markdown("**Ações**")
             
             st.divider()
             
             for _, row in agenda_df.iterrows():
                 with st.container():
                     col1, col2, col3, col4, col5 = st.columns([3, 1, 1, 1, 1])
-                    with col1: st.write(f"**{row['nome_completo']}**")
-                    with col2: st.write(f"🕐 {row['data_consulta'].strftime('%H:%M')}")
-                    with col3: st.write(f"📝 {row['tipo']}")
+                    
+                    with col1:
+                        st.write(f"**{row['nome_completo']}**")
+                    
+                    with col2:
+                        st.write(f"🕐 {row['data_consulta'].strftime('%H:%M')}")
+                    
+                    with col3:
+                        st.write(f"📝 {row['tipo']}")
+                    
                     with col4:
-                        status_color = {'agendada': 'blue', 'realizada': 'green', 'cancelada': 'red', 'falta': 'orange'}.get(row['status'], 'gray')
-                        st.markdown(f"<span style='color:{status_color}'>{row['status'].title()}</span>", unsafe_allow_html=True)
+                        status_color = {
+                            'agendada': 'blue',
+                            'realizada': 'green', 
+                            'cancelada': 'red',
+                            'falta': 'orange'
+                        }.get(row['status'], 'gray')
+                        st.markdown(f"<span style='color:{status_color}'>{row['status'].title()}</span>", 
+                                  unsafe_allow_html=True)
                     
                     with col5:
+                        # Só mostrar botão de cancelar se a consulta estiver agendada
                         if row['status'] == 'agendada':
                             consulta_id = converter_numpy_para_python(row['id'])
                             if st.button(f"❌ Cancelar", key=f"cancel_{consulta_id}", use_container_width=True):
-                                cur = conn.cursor()
-                                cur.execute("UPDATE consultas SET status = 'cancelada' WHERE id = %s", (consulta_id,))
-                                conn.commit()
-                                st.rerun()
+                                try:
+                                    cur = conn.cursor()
+                                    cur.execute("UPDATE consultas SET status = 'cancelada' WHERE id = %s", (consulta_id,))
+                                    conn.commit()
+                                    st.success(f"✅ Consulta cancelada com sucesso!")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Erro ao cancelar: {e}")
                         else:
                             st.write("—")
                     
+                    # Mostrar valor em linha separada
                     st.caption(f"💰 {converter_numpy_para_python(row['valor_consulta']):,.0f} CVE")
                     st.divider()
+                    
+            # Estatísticas no final
+            total_consultas = len(agenda_df)
+            realizadas = len(agenda_df[agenda_df['status'] == 'realizada'])
+            faltas = len(agenda_df[agenda_df['status'] == 'falta'])
+            canceladas = len(agenda_df[agenda_df['status'] == 'cancelada'])
+            
+            col_res1, col_res2, col_res3, col_res4 = st.columns(4)
+            with col_res1:
+                st.metric("Total", total_consultas)
+            with col_res2:
+                st.metric("Realizadas", realizadas)
+            with col_res3:
+                st.metric("Faltas", faltas)
+            with col_res4:
+                st.metric("Canceladas", canceladas)
         else:
             st.info("📅 Nenhuma consulta agendada para o período selecionado")
             
@@ -462,13 +492,14 @@ elif menu == "✅ Registrar Consulta Realizada":
                    c.pagamento_realizado, c.status
             FROM consultas c
             JOIN pacientes p ON c.paciente_id = p.id
-            WHERE c.status = 'agendada' AND c.data_consulta <= CURRENT_TIMESTAMP + INTERVAL '1 day'
+            WHERE c.status = 'agendada' AND c.data_consulta <= CURRENT_DATE + INTERVAL '1 day'
             ORDER BY c.data_consulta
         """, conn)
         
         if not consultas_df.empty:
             consultas_df['display'] = consultas_df['nome_completo'] + " - " + consultas_df['data_consulta'].dt.strftime('%d/%m/%Y %H:%M')
             consulta_selecionada = st.selectbox("Selecione a consulta:", consultas_df['display'])
+            
             consulta_info = consultas_df[consultas_df['display'] == consulta_selecionada].iloc[0]
             
             st.info(f"""
@@ -476,28 +507,43 @@ elif menu == "✅ Registrar Consulta Realizada":
             - **Paciente:** {consulta_info['nome_completo']}
             - **Data/Hora:** {consulta_info['data_consulta'].strftime('%d/%m/%Y %H:%M')}
             - **Valor:** {converter_numpy_para_python(consulta_info['valor_consulta']):,.0f} CVE
+            - **Pagamento:** {'✅ Pago' if consulta_info['pagamento_realizado'] else '⏳ Pendente'}
             """)
             
             col1, col2, col3 = st.columns(3)
+            
             with col1:
                 if st.button("✅ Realizada", type="primary", use_container_width=True):
+                    consulta_id = converter_numpy_para_python(consulta_info['id'])
+                    
                     cur = conn.cursor()
-                    cur.execute("UPDATE consultas SET status = 'realizada' WHERE id = %s", (converter_numpy_para_python(consulta_info['id']),))
+                    cur.execute("UPDATE consultas SET status = 'realizada' WHERE id = %s", (consulta_id,))
                     conn.commit()
+                    st.success("✅ Consulta registrada como realizada!")
                     st.rerun()
+            
             with col2:
                 if st.button("❌ Não compareceu", type="secondary", use_container_width=True):
+                    consulta_id = converter_numpy_para_python(consulta_info['id'])
+                    
                     cur = conn.cursor()
-                    cur.execute("UPDATE consultas SET status = 'falta' WHERE id = %s", (converter_numpy_para_python(consulta_info['id']),))
+                    cur.execute("UPDATE consultas SET status = 'falta' WHERE id = %s", (consulta_id,))
                     conn.commit()
+                    st.warning("⚠️ Consulta registrada como falta (paciente não compareceu)")
                     st.rerun()
+            
             with col3:
-                if not consulta_info['pagamento_realizado']:
+                if not consulta_info['pagamento_realizado'] and consulta_info['status'] == 'realizada':
                     if st.button("💰 Pagamento", use_container_width=True):
+                        consulta_id = converter_numpy_para_python(consulta_info['id'])
+                        
                         cur = conn.cursor()
-                        cur.execute("UPDATE consultas SET pagamento_realizado = TRUE WHERE id = %s", (converter_numpy_para_python(consulta_info['id']),))
+                        cur.execute("UPDATE consultas SET pagamento_realizado = TRUE WHERE id = %s", (consulta_id,))
                         conn.commit()
+                        st.success("💰 Pagamento registrado com sucesso!")
                         st.rerun()
+                else:
+                    st.button("💰 Pagamento", disabled=True, use_container_width=True)
         else:
             st.info("📝 Nenhuma consulta agendada para registrar")
             
@@ -525,33 +571,56 @@ elif menu == "📊 Estatísticas":
         
         with col2:
             consultas_mes = pd.read_sql("""
-                SELECT COUNT(*) as total FROM consultas 
+                SELECT COUNT(*) as total 
+                FROM consultas 
                 WHERE EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM CURRENT_DATE)
             """, conn)
             st.metric("Consultas este Mês", converter_numpy_para_python(consultas_mes.iloc[0]['total']))
         
         with col3:
             receita_mes = pd.read_sql("""
-                SELECT COALESCE(SUM(valor_consulta), 0) as total FROM consultas 
-                WHERE status = 'realizada' AND EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM CURRENT_DATE)
+                SELECT COALESCE(SUM(valor_consulta), 0) as total 
+                FROM consultas 
+                WHERE status = 'realizada' 
+                AND EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM CURRENT_DATE)
             """, conn)
-            st.metric("Receita do Mês (CVE)", f"{converter_numpy_para_python(receita_mes.iloc[0]['total']):,.0f}")
+            receita_valor = converter_numpy_para_python(receita_mes.iloc[0]['total'])
+            st.metric("Receita do Mês (CVE)", f"{receita_valor:,.0f}")
         
         with col4:
             taxa_falta = pd.read_sql("""
-                SELECT ROUND(COUNT(CASE WHEN status = 'falta' THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 1) as taxa
-                FROM consultas WHERE EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM CURRENT_DATE)
+                SELECT 
+                    ROUND(
+                        COUNT(CASE WHEN status = 'falta' THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0),
+                        1
+                    ) as taxa
+                FROM consultas 
+                WHERE EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM CURRENT_DATE)
             """, conn)
-            taxa_v = converter_numpy_para_python(taxa_falta.iloc[0]['taxa']) if not pd.isna(taxa_falta.iloc[0]['taxa']) else 0
-            st.metric("Taxa de Faltas (%)", f"{taxa_v}")
+            taxa_valor = converter_numpy_para_python(taxa_falta.iloc[0]['taxa']) if not pd.isna(taxa_falta.iloc[0]['taxa']) else 0
+            st.metric("Taxa de Faltas (%)", f"{taxa_valor}")
+        
+        st.subheader("📊 Consultas por Status (Este Mês)")
+        status_df = pd.read_sql("""
+            SELECT status, COUNT(*) as quantidade
+            FROM consultas
+            WHERE EXTRACT(MONTH FROM data_consulta) = EXTRACT(MONTH FROM CURRENT_DATE)
+            GROUP BY status
+        """, conn)
+        
+        if not status_df.empty:
+            status_df['quantidade'] = status_df['quantidade'].apply(converter_numpy_para_python)
+            st.bar_chart(status_df.set_index('status'))
+        else:
+            st.info("📊 Sem dados para o mês atual")
             
     except Exception as e:
-        st.error(f"❌ Erro: {e}")
+        st.error(f"❌ Erro ao gerar estatísticas: {e}")
     finally:
         if 'conn' in locals() and conn:
             conn.close()
 
-# RODAPÉ
+# RODAPÉ SIMPLES
 st.markdown("---")
 st.markdown(
     "<div style='text-align: center; color: #666; padding: 10px;'>"
