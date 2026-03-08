@@ -211,7 +211,7 @@ if menu == "➕ Cadastrar Paciente":
             else:
                 st.error("❌ Preencha os campos obrigatórios: Nome Completo e Telefone")
 
-# 2. MARCAR CONSULTA - CORRIGIDO COM LÓGICA SEPARADA PARA HOJE E OUTROS DIAS
+# 2. MARCAR CONSULTA - CORRIGIDO COM LÓGICA SEPARADA PARA HOJE E AMANHÃ/OUTROS DIAS
 elif menu == "📅 Marcar Consulta":
     st.header("📅 Marcar Nova Consulta")
     
@@ -243,6 +243,10 @@ elif menu == "📅 Marcar Consulta":
                         value=data_atual_cv
                     )
                     
+                    # Converter para date para comparação
+                    if isinstance(data_consulta, datetime):
+                        data_consulta = data_consulta.date()
+                    
                     # Verificar se a data selecionada é hoje
                     eh_hoje = (data_consulta == data_atual_cv)
                     
@@ -254,59 +258,76 @@ elif menu == "📅 Marcar Consulta":
                                 continue
                             todos_horarios.append(time(hora, minuto))
                     
-                    # REMOVER HORÁRIOS JÁ OCUPADOS
-                    horarios_disponiveis = []
+                    # BUSCAR TODOS OS HORÁRIOS OCUPADOS PARA ESTA DATA
+                    cur = conn.cursor()
                     
+                    # Criar lista de horários ocupados
+                    horarios_ocupados = []
+                    
+                    # Para cada horário, verificar se está ocupado
                     for horario in todos_horarios:
                         data_hora = datetime.combine(data_consulta, horario)
-                        
-                        # LÓGICA DIFERENCIADA PARA HOJE VS OUTROS DIAS
-                        
-                        # 1. Verificar se o horário está ocupado (para qualquer data)
-                        cur = conn.cursor()
                         cur.execute(
                             "SELECT id FROM consultas WHERE data_consulta = %s AND status IN ('agendada', 'realizada')",
                             (data_hora,)
                         )
-                        horario_ocupado = cur.fetchone() is not None
+                        if cur.fetchone() is not None:
+                            horarios_ocupados.append(horario)
+                    
+                    # LÓGICA DIFERENCIADA PARA HOJE VS AMANHÃ/OUTROS DIAS
+                    
+                    # Se for HOJE
+                    if eh_hoje:
+                        st.warning(f"🕐 **ATENÇÃO: Hoje é {data_atual_cv.strftime('%d/%m/%Y')}**")
                         
-                        if horario_ocupado:
-                            continue  # Pular horários ocupados
+                        # Filtrar apenas horários futuros (depois de agora) que não estão ocupados
+                        horarios_disponiveis = []
                         
-                        # 2. Se for HOJE, verificar se o horário já passou
-                        if eh_hoje:
+                        for horario in todos_horarios:
+                            # Verificar se o horário já passou
                             horario_datetime = datetime.combine(data_consulta, horario)
                             horario_datetime = CVT.localize(horario_datetime)
                             
-                            # Para hoje, só mostrar horários FUTUROS (maiores que agora)
-                            if horario_datetime > agora:
+                            # Se o horário é futuro E não está ocupado
+                            if horario_datetime > agora and horario not in horarios_ocupados:
                                 horarios_disponiveis.append(horario)
-                        else:
-                            # Para amanhã ou outros dias, mostrar TODOS os horários disponíveis
-                            horarios_disponiveis.append(horario)
-                    
-                    # MOSTRAR SELECTBOX COM HORÁRIOS DISPONÍVEIS
-                    if horarios_disponiveis:
-                        # Ordenar horários
-                        horarios_disponiveis.sort()
                         
-                        # Informação adicional sobre o dia selecionado
-                        if eh_hoje:
-                            st.info(f"🕐 **Hoje**: Mostrando apenas horários futuros (após {agora.strftime('%H:%M')})")
+                        if horarios_disponiveis:
+                            st.info(f"📅 **HOJE**: Mostrando apenas horários futuros (após {agora.strftime('%H:%M')})")
+                            
+                            # Ordenar horários
+                            horarios_disponiveis.sort()
+                            
+                            hora_consulta = st.selectbox(
+                                "Horário*", 
+                                horarios_disponiveis,
+                                format_func=lambda x: x.strftime('%H:%M'),
+                                key="hoje"
+                            )
                         else:
-                            st.info(f"📅 **{data_consulta.strftime('%d/%m/%Y')}**: Todos os horários disponíveis")
-                        
-                        hora_consulta = st.selectbox(
-                            "Horário*", 
-                            horarios_disponiveis,
-                            format_func=lambda x: x.strftime('%H:%M')
-                        )
-                    else:
-                        if eh_hoje:
                             st.error(f"❌ Não há horários disponíveis para hoje após as {agora.strftime('%H:%M')}!")
+                            hora_consulta = None
+                    
+                    # Se for AMANHÃ ou OUTROS DIAS
+                    else:
+                        st.success(f"📅 **{data_consulta.strftime('%d/%m/%Y')}**: Todos os horários disponíveis (8h às 20h)")
+                        
+                        # Mostrar todos os horários que NÃO estão ocupados
+                        horarios_disponiveis = [h for h in todos_horarios if h not in horarios_ocupados]
+                        
+                        if horarios_disponiveis:
+                            # Ordenar horários
+                            horarios_disponiveis.sort()
+                            
+                            hora_consulta = st.selectbox(
+                                "Horário*", 
+                                horarios_disponiveis,
+                                format_func=lambda x: x.strftime('%H:%M'),
+                                key="outros_dias"
+                            )
                         else:
                             st.error("❌ Não há horários disponíveis para esta data!")
-                        hora_consulta = None
+                            hora_consulta = None
                 
                 with col2:
                     primeira_consulta = st.checkbox("Primeira Consulta", value=True)
@@ -362,16 +383,17 @@ elif menu == "📅 Marcar Consulta":
                         conn.commit()
                         
                         # Mensagem de sucesso com informação do dia
-                        dia_texto = "HOJE" if eh_hoje else data_consulta.strftime('%d/%m/%Y')
-                        st.success(f"✅ Consulta marcada para {dia_texto} às {hora_consulta.strftime('%H:%M')}")
+                        if eh_hoje:
+                            st.success(f"✅ Consulta marcada para HOJE às {hora_consulta.strftime('%H:%M')}")
+                        else:
+                            st.success(f"✅ Consulta marcada para {data_consulta.strftime('%d/%m/%Y')} às {hora_consulta.strftime('%H:%M')}")
                         st.balloons()
                     
     except Exception as e:
         st.error(f"❌ Erro: {e}")
     finally:
         if 'conn' in locals() and conn:
-            conn.close()
-# 3. VER PACIENTES
+            conn.close()# 3. VER PACIENTES
 elif menu == "👥 Ver Pacientes":
     st.header("👥 Lista de Pacientes")
     
