@@ -54,13 +54,6 @@ def eh_horario_de_aula(data_consulta, hora_consulta):
     
     return False
 
-# Função para obter hora atual de Cabo Verde (UTC-1)
-def hora_cv_agora():
-    """Retorna a data e hora atual em Cabo Verde (UTC-1)"""
-    utc_agora = datetime.utcnow()
-    cv_agora = utc_agora - timedelta(hours=1)  # Cabo Verde é UTC-1
-    return cv_agora
-
 # Configuração da página
 st.set_page_config(
     page_title="Atendimento Viana - Psicologia", 
@@ -236,7 +229,7 @@ if menu == "➕ Cadastrar Paciente":
             else:
                 st.error("❌ Preencha os campos obrigatórios: Nome Completo e Telefone")
 
-# 2. MARCAR CONSULTA - CORRIGIDO COM LÓGICA SIMPLES
+# 2. MARCAR CONSULTA - CORRIGIDO DEFINITIVAMENTE
 elif menu == "📅 Marcar Consulta":
     st.header("📅 Marcar Nova Consulta")
     
@@ -258,10 +251,10 @@ elif menu == "📅 Marcar Consulta":
                     paciente_nome = st.selectbox("Paciente*", pacientes_df['nome_completo'])
                     data_consulta = st.date_input("Data*", min_value=date.today())
                     
-                    # Obter data e hora atual de Cabo Verde
-                    agora_cv = hora_cv_agora()
-                    data_atual_cv = agora_cv.date()
-                    hora_atual_cv = agora_cv.time()
+                    # Usar data e hora atual do sistema (sem fuso horário complicado)
+                    agora = datetime.now()
+                    data_atual = agora.date()
+                    hora_atual = agora.time()
                     
                     # Gerar TODOS os horários possíveis (8h às 20h)
                     todos_horarios = []
@@ -277,16 +270,16 @@ elif menu == "📅 Marcar Consulta":
                         if not eh_horario_de_aula(data_consulta, horario):
                             horarios_sem_aula.append(horario)
                     
-                    # APLICAR A LÓGICA SIMPLES QUE VOCÊ SUGERIU
+                    # LÓGICA CORRETA: Hoje vs Futuro
                     horarios_disponiveis = []
                     
                     for horario in horarios_sem_aula:
-                        if data_consulta == data_atual_cv:
-                            # SE FOR HOJE: só horários futuros
-                            if horario > hora_atual_cv:
+                        if data_consulta == data_atual:
+                            # HOJE: só horários futuros
+                            if horario > hora_atual:
                                 horarios_disponiveis.append(horario)
                         else:
-                            # SE FOR OUTRO DIA: todos os horários
+                            # AMANHÃ OU FUTURO: todos os horários sem aula
                             horarios_disponiveis.append(horario)
                     
                     # Verificar horários já ocupados no banco
@@ -334,7 +327,7 @@ elif menu == "📅 Marcar Consulta":
                             st.error("❌ Este é um horário de aula! Escolha outro horário.")
                             st.stop()
                         
-                        if data_consulta == data_atual_cv and hora_consulta <= hora_atual_cv:
+                        if data_consulta == data_atual and hora_consulta <= hora_atual:
                             st.error("❌ Não é possível marcar consultas em horários que já passaram!")
                             st.stop()
                         
@@ -361,7 +354,7 @@ elif menu == "📅 Marcar Consulta":
                              forma_pagamento, observacoes)
                         )
                         conn.commit()
-                        st.success(f"✅ Consulta marcada para {data_consulta.strftime('%d/%m/%Y')} às {hora_consulta.strftime('%H:%M')} (CVT)")
+                        st.success(f"✅ Consulta marcada para {data_consulta.strftime('%d/%m/%Y')} às {hora_consulta.strftime('%H:%M')}")
                         st.balloons()
                     
     except Exception as e:
@@ -578,7 +571,7 @@ elif menu == "✅ Registrar Consulta Realizada":
             st.info(f"""
             **Detalhes da Consulta:**
             - **Paciente:** {consulta_info['nome_completo']}
-            - **Data/Hora:** {consulta_info['data_consulta'].strftime('%d/%m/%Y %H:%M')} (CVT)
+            - **Data/Hora:** {consulta_info['data_consulta'].strftime('%d/%m/%Y %H:%M')}
             - **Valor:** {converter_numpy_para_python(consulta_info['valor_consulta']):,.0f} CVE
             - **Pagamento:** {'✅ Pago' if consulta_info['pagamento_realizado'] else '⏳ Pendente'}
             """)
