@@ -236,7 +236,7 @@ if menu == "➕ Cadastrar Paciente":
             else:
                 st.error("❌ Preencha os campos obrigatórios: Nome Completo e Telefone")
 
-# 2. MARCAR CONSULTA - CORRIGIDO (sem nenhuma informação de horários no layout)
+# 2. MARCAR CONSULTA - CORRIGIDO (amanhã mostra todos os horários)
 elif menu == "📅 Marcar Consulta":
     st.header("📅 Marcar Nova Consulta")
     
@@ -285,7 +285,7 @@ elif menu == "📅 Marcar Consulta":
                             if horario <= hora_atual_cv:
                                 continue
                         
-                        # 3. Se for AMANHÃ ou futuro, manter todos os horários (exceto aulas)
+                        # 3. Para AMANHÃ ou futuro, manter TODOS os horários (exceto aulas)
                         horarios_disponiveis.append(horario)
                     
                     # Verificar horários já ocupados no banco
@@ -301,7 +301,7 @@ elif menu == "📅 Marcar Consulta":
                         if cur.fetchone() is None:
                             horarios_livres.append(horario)
                     
-                    # Mostrar lista de horários disponíveis (apenas o selectbox, sem mensagens)
+                    # Mostrar lista de horários disponíveis
                     if horarios_livres:
                         hora_consulta = st.selectbox(
                             "Horário*", 
