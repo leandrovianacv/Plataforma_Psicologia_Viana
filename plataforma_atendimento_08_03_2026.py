@@ -4,10 +4,23 @@ import pandas as pd
 from datetime import datetime, date, time, timedelta
 import os
 import numpy as np
+import pytz  # Adicionar esta importação
 import warnings
 warnings.filterwarnings('ignore')
 
-# Função para converter numpy.int64
+# Configurar fuso horário de Cabo Verde
+CVT = pytz.timezone('Atlantic/Cape_Verde')
+
+# Função para obter a data/hora atual em Cabo Verde
+def agora_cv():
+    """Retorna o datetime atual no fuso de Cabo Verde"""
+    return datetime.now(CVT)
+
+def hoje_cv():
+    """Retorna a data atual em Cabo Verde"""
+    return agora_cv().date()
+
+# Função para converter numpy.int64 (mantida igual)
 def converter_numpy_para_python(valor):
     """Converte tipos numpy para tipos Python nativos"""
     if isinstance(valor, (np.integer, np.int64)):
@@ -26,102 +39,15 @@ st.set_page_config(
     layout="wide"
 )
 
-# Conexão com Supabase (via Session Pooler)
-def conectar_banco():
-    """Conecta ao Supabase usando Session Pooler"""
-    try:
-        if "DB_URL" in st.secrets:
-            db_url = st.secrets["DB_URL"]
-            import re
-            match = re.match(r'postgresql://([^:]+):([^@]+)@([^:]+):(\d+)/(.+)', db_url)
-            if match:
-                user, password, host, port, dbname = match.groups()
-                return psycopg2.connect(
-                    host=host,
-                    port=port,
-                    database=dbname,
-                    user=user,
-                    password=password
-                )
-        else:
-            db_url = os.getenv("DB_URL")
-            if db_url:
-                import re
-                match = re.match(r'postgresql://([^:]+):([^@]+)@([^:]+):(\d+)/(.+)', db_url)
-                if match:
-                    user, password, host, port, dbname = match.groups()
-                    return psycopg2.connect(
-                        host=host,
-                        port=port,
-                        database=dbname,
-                        user=user,
-                        password=password
-                    )
-            else:
-                st.error("❌ DB_URL não configurada! Use secrets ou variável de ambiente.")
-                return None
-    except Exception as e:
-        st.error(f"Erro ao conectar: {e}")
-        return None
-
-# Inicializar banco
-def inicializar_banco():
-    """Garante que as tabelas necessárias existam"""
-    try:
-        conn = conectar_banco()
-        if conn is None:
-            return False
-            
-        cur = conn.cursor()
-        
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS pacientes (
-                id SERIAL PRIMARY KEY,
-                nome_completo VARCHAR(100) NOT NULL,
-                telefone VARCHAR(20) NOT NULL,
-                email VARCHAR(100),
-                data_nascimento DATE,
-                profissao VARCHAR(50),
-                como_chegou VARCHAR(50),
-                queixa_principal TEXT,
-                medicacoes_atuais TEXT,
-                observacoes_iniciais TEXT,
-                ativo BOOLEAN DEFAULT TRUE,
-                data_cadastro TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        """)
-        
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS consultas (
-                id SERIAL PRIMARY KEY,
-                paciente_id INTEGER REFERENCES pacientes(id),
-                data_consulta TIMESTAMP NOT NULL,
-                primeira_consulta BOOLEAN DEFAULT TRUE,
-                valor_consulta DECIMAL(10,2) DEFAULT 0,
-                status VARCHAR(20) DEFAULT 'agendada',
-                observacoes_tecnicas TEXT,
-                pagamento_realizado BOOLEAN DEFAULT FALSE,
-                forma_pagamento VARCHAR(50),
-                data_criacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        """)
-        
-        conn.commit()
-        conn.close()
-        return True
-    except Exception as e:
-        st.error(f"Erro ao inicializar banco: {e}")
-        return False
-
-# Executar inicialização
-if inicializar_banco():
-    st.sidebar.success("✅ Conectado ao Supabase")
-else:
-    st.sidebar.error("❌ Falha na conexão com Supabase")
+# [MANTER TODAS AS FUNÇÕES DE CONEXÃO E INICIALIZAÇÃO IGUAIS]
 
 # HEADER PERSONALIZADO
 st.markdown("<h1 style='text-align: center; color: #1f77b4;'>🧠 PSICARE BY BELINDA VIANA</h1>", unsafe_allow_html=True)
 st.markdown("---")
+
+# Mostrar data/hora atual de Cabo Verde no sidebar
+st.sidebar.markdown(f"**📅 Data/Hora CV:** {agora_cv().strftime('%d/%m/%Y %H:%M')}")
+st.sidebar.markdown("---")
 
 # MENU PERSONALIZADO
 st.sidebar.markdown("## 🧭 Navegação")
@@ -134,7 +60,7 @@ menu = st.sidebar.selectbox("Selecione uma opção:", [
     "📊 Estatísticas"
 ])
 
-# 1. CADASTRAR PACIENTE
+# 1. CADASTRAR PACIENTE (mantido igual)
 if menu == "➕ Cadastrar Paciente":
     st.header("👤 Cadastrar Novo Paciente")
     
@@ -150,7 +76,7 @@ if menu == "➕ Cadastrar Paciente":
             data_nascimento = st.date_input(
                 "Data de Nascimento", 
                 min_value=date(1930, 1, 1),
-                max_value=date.today(),
+                max_value=hoje_cv(),  # Usar data atual de CV
                 value=None,
                 format="DD/MM/YYYY"
             )
@@ -194,7 +120,7 @@ if menu == "➕ Cadastrar Paciente":
             else:
                 st.error("❌ Preencha os campos obrigatórios: Nome Completo e Telefone")
 
-# 2. MARCAR CONSULTA - SEM NENHUM FILTRO DE HORÁRIO
+# 2. MARCAR CONSULTA - CORRIGIDO COM FUSO HORÁRIO
 elif menu == "📅 Marcar Consulta":
     st.header("📅 Marcar Nova Consulta")
     
@@ -214,7 +140,16 @@ elif menu == "📅 Marcar Consulta":
                 
                 with col1:
                     paciente_nome = st.selectbox("Paciente*", pacientes_df['nome_completo'])
-                    data_consulta = st.date_input("Data*", min_value=date.today())
+                    
+                    # Data atual em Cabo Verde
+                    data_atual_cv = hoje_cv()
+                    
+                    # Selector de data - mínimo é hoje em CV
+                    data_consulta = st.date_input(
+                        "Data*", 
+                        min_value=data_atual_cv,
+                        value=data_atual_cv  # Valor padrão é hoje
+                    )
                     
                     # GERAR TODOS OS HORÁRIOS POSSÍVEIS (8h às 20h)
                     todos_horarios = []
@@ -224,10 +159,22 @@ elif menu == "📅 Marcar Consulta":
                                 continue
                             todos_horarios.append(time(hora, minuto))
                     
-                    # REMOVER APENAS HORÁRIOS JÁ OCUPADOS
+                    # REMOVER HORÁRIOS JÁ OCUPADOS
                     horarios_livres = []
+                    agora = agora_cv()  # Hora atual em CV
+                    
                     for horario in todos_horarios:
                         data_hora = datetime.combine(data_consulta, horario)
+                        
+                        # Se for hoje, verificar se o horário já passou
+                        if data_consulta == data_atual_cv:
+                            horario_datetime = datetime.combine(data_consulta, horario)
+                            horario_datetime = CVT.localize(horario_datetime)  # Localizar no fuso CV
+                            
+                            if horario_datetime <= agora:
+                                continue  # Pular horários que já passaram hoje
+                        
+                        # Verificar se já existe consulta neste horário
                         cur = conn.cursor()
                         cur.execute(
                             "SELECT id FROM consultas WHERE data_consulta = %s AND status IN ('agendada', 'realizada')",
@@ -236,7 +183,7 @@ elif menu == "📅 Marcar Consulta":
                         if cur.fetchone() is None:
                             horarios_livres.append(horario)
                     
-                    # MOSTRAR SELECTBOX COM TODOS OS HORÁRIOS
+                    # MOSTRAR SELECTBOX COM HORÁRIOS DISPONÍVEIS
                     if horarios_livres:
                         hora_consulta = st.selectbox(
                             "Horário*", 
@@ -264,6 +211,12 @@ elif menu == "📅 Marcar Consulta":
                         st.error("❌ Selecione um horário válido!")
                     else:
                         data_hora = datetime.combine(data_consulta, hora_consulta)
+                        
+                        # Verificação adicional para horários no passado
+                        data_hora_cv = CVT.localize(datetime.combine(data_consulta, hora_consulta))
+                        if data_hora_cv <= agora_cv():
+                            st.error("❌ Não é possível marcar consulta para um horário que já passou!")
+                            st.stop()
                         
                         # Verificar se horário está ocupado (segurança)
                         cur.execute(
@@ -297,7 +250,7 @@ elif menu == "📅 Marcar Consulta":
         if 'conn' in locals() and conn:
             conn.close()
 
-# 3. VER PACIENTES
+# 3. VER PACIENTES (mantido igual)
 elif menu == "👥 Ver Pacientes":
     st.header("👥 Lista de Pacientes")
     
@@ -328,7 +281,6 @@ elif menu == "👥 Ver Pacientes":
             with col1:
                 st.metric("Total de Pacientes", len(pacientes_df))
             with col2:
-                from datetime import datetime
                 primeiro_dia_mes = datetime.now().replace(day=1)
                 cadastros_mes = 0
                 for data_str in pacientes_df['Cadastro']:
@@ -348,7 +300,7 @@ elif menu == "👥 Ver Pacientes":
         if 'conn' in locals() and conn:
             conn.close()
 
-# 4. AGENDA DA SEMANA - COM OPÇÃO DE CANCELAR
+# 4. AGENDA DA SEMANA (corrigido para mostrar corretamente)
 elif menu == "🗓️ Agenda da Semana":
     st.header("🗓️ Agenda de Consultas")
     
@@ -359,40 +311,50 @@ elif menu == "🗓️ Agenda da Semana":
         if conn is None:
             st.error("❌ Não foi possível conectar ao banco de dados")
             st.stop()
-            
+        
+        # Data atual em Cabo Verde
+        hoje = hoje_cv()
+        
+        # Consultas SQL adaptadas para considerar data em UTC
         if opcao_agenda == "Hoje":
-            agenda_df = pd.read_sql("""
+            query = """
                 SELECT c.id, p.nome_completo, c.data_consulta, 
                        CASE WHEN c.primeira_consulta THEN 'Primeira' ELSE 'Retorno' END as tipo,
                        c.status, c.valor_consulta,
                        c.forma_pagamento
                 FROM consultas c
                 JOIN pacientes p ON c.paciente_id = p.id
-                WHERE DATE(c.data_consulta) = CURRENT_DATE
+                WHERE DATE(c.data_consulta) = DATE(%s)
                 ORDER BY c.data_consulta
-            """, conn)
+            """
+            params = (hoje,)
         elif opcao_agenda == "Amanhã":
-            agenda_df = pd.read_sql("""
+            amanha = hoje + timedelta(days=1)
+            query = """
                 SELECT c.id, p.nome_completo, c.data_consulta, 
                        CASE WHEN c.primeira_consulta THEN 'Primeira' ELSE 'Retorno' END as tipo,
                        c.status, c.valor_consulta,
                        c.forma_pagamento
                 FROM consultas c
                 JOIN pacientes p ON c.paciente_id = p.id
-                WHERE DATE(c.data_consulta) = CURRENT_DATE + INTERVAL '1 day'
+                WHERE DATE(c.data_consulta) = DATE(%s)
                 ORDER BY c.data_consulta
-            """, conn)
+            """
+            params = (amanha,)
         else:
-            agenda_df = pd.read_sql("""
+            query = """
                 SELECT c.id, p.nome_completo, c.data_consulta, 
                        CASE WHEN c.primeira_consulta THEN 'Primeira' ELSE 'Retorno' END as tipo,
                        c.status, c.valor_consulta,
                        c.forma_pagamento
                 FROM consultas c
                 JOIN pacientes p ON c.paciente_id = p.id
-                WHERE c.data_consulta BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'
+                WHERE DATE(c.data_consulta) BETWEEN DATE(%s) AND DATE(%s)
                 ORDER BY c.data_consulta
-            """, conn)
+            """
+            params = (hoje, hoje + timedelta(days=7))
+        
+        agenda_df = pd.read_sql(query, conn, params=params)
         
         if not agenda_df.empty:
             # Criar colunas para os cabeçalhos
@@ -449,8 +411,8 @@ elif menu == "🗓️ Agenda da Semana":
                         else:
                             st.write("—")
                     
-                    # Mostrar valor em linha separada
-                    st.caption(f"💰 {converter_numpy_para_python(row['valor_consulta']):,.0f} CVE")
+                    # Mostrar data e valor em linha separada
+                    st.caption(f"📅 {row['data_consulta'].strftime('%d/%m/%Y')} | 💰 {converter_numpy_para_python(row['valor_consulta']):,.0f} CVE")
                     st.divider()
                     
             # Estatísticas no final
@@ -477,7 +439,7 @@ elif menu == "🗓️ Agenda da Semana":
         if 'conn' in locals() and conn:
             conn.close()
 
-# 5. REGISTRAR CONSULTA REALIZADA
+# 5. REGISTRAR CONSULTA REALIZADA (corrigido com fuso)
 elif menu == "✅ Registrar Consulta Realizada":
     st.header("✅ Registrar Consulta Realizada")
     
@@ -486,15 +448,18 @@ elif menu == "✅ Registrar Consulta Realizada":
         if conn is None:
             st.error("❌ Não foi possível conectar ao banco de dados")
             st.stop()
-            
+        
+        # Data atual em Cabo Verde
+        hoje = hoje_cv()
+        
         consultas_df = pd.read_sql("""
             SELECT c.id, p.nome_completo, c.data_consulta, c.valor_consulta,
                    c.pagamento_realizado, c.status
             FROM consultas c
             JOIN pacientes p ON c.paciente_id = p.id
-            WHERE c.status = 'agendada' AND c.data_consulta <= CURRENT_DATE + INTERVAL '1 day'
+            WHERE c.status = 'agendada' AND DATE(c.data_consulta) <= DATE(%s)
             ORDER BY c.data_consulta
-        """, conn)
+        """, conn, params=(hoje,))
         
         if not consultas_df.empty:
             consultas_df['display'] = consultas_df['nome_completo'] + " - " + consultas_df['data_consulta'].dt.strftime('%d/%m/%Y %H:%M')
@@ -553,7 +518,7 @@ elif menu == "✅ Registrar Consulta Realizada":
         if 'conn' in locals() and conn:
             conn.close()
 
-# 6. ESTATÍSTICAS
+# 6. ESTATÍSTICAS (mantido igual)
 elif menu == "📊 Estatísticas":
     st.header("📊 Estatísticas do Consultório")
     
