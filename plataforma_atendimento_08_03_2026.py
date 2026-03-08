@@ -4,21 +4,8 @@ import pandas as pd
 from datetime import datetime, date, time, timedelta
 import os
 import numpy as np
-import pytz
 import warnings
 warnings.filterwarnings('ignore')
-
-# Configurar fuso horário de Cabo Verde
-CVT = pytz.timezone('Atlantic/Cape_Verde')
-
-# Função para obter a data/hora atual em Cabo Verde
-def agora_cv():
-    """Retorna o datetime atual no fuso de Cabo Verde"""
-    return datetime.now(CVT)
-
-def hoje_cv():
-    """Retorna a data atual em Cabo Verde"""
-    return agora_cv().date()
 
 # Função para converter numpy.int64
 def converter_numpy_para_python(valor):
@@ -136,10 +123,6 @@ else:
 st.markdown("<h1 style='text-align: center; color: #1f77b4;'>🧠 PSICARE BY BELINDA VIANA</h1>", unsafe_allow_html=True)
 st.markdown("---")
 
-# Mostrar data/hora atual de Cabo Verde no sidebar
-st.sidebar.markdown(f"**📅 Data/Hora CV:** {agora_cv().strftime('%d/%m/%Y %H:%M')}")
-st.sidebar.markdown("---")
-
 # MENU PERSONALIZADO
 st.sidebar.markdown("## 🧭 Navegação")
 menu = st.sidebar.selectbox("Selecione uma opção:", [
@@ -167,7 +150,7 @@ if menu == "➕ Cadastrar Paciente":
             data_nascimento = st.date_input(
                 "Data de Nascimento", 
                 min_value=date(1930, 1, 1),
-                max_value=hoje_cv(),
+                max_value=date.today(),
                 value=None,
                 format="DD/MM/YYYY"
             )
@@ -211,7 +194,7 @@ if menu == "➕ Cadastrar Paciente":
             else:
                 st.error("❌ Preencha os campos obrigatórios: Nome Completo e Telefone")
 
-# 2. MARCAR CONSULTA - CORRIGIDO COM LÓGICA SEPARADA PARA HOJE E AMANHÃ/OUTROS DIAS
+# 2. MARCAR CONSULTA - SEM NENHUM FILTRO DE HORÁRIO
 elif menu == "📅 Marcar Consulta":
     st.header("📅 Marcar Nova Consulta")
     
@@ -231,24 +214,7 @@ elif menu == "📅 Marcar Consulta":
                 
                 with col1:
                     paciente_nome = st.selectbox("Paciente*", pacientes_df['nome_completo'])
-                    
-                    # Data atual em Cabo Verde
-                    data_atual_cv = hoje_cv()
-                    agora = agora_cv()
-                    
-                    # Selector de data - mínimo é hoje em CV
-                    data_consulta = st.date_input(
-                        "Data*", 
-                        min_value=data_atual_cv,
-                        value=data_atual_cv
-                    )
-                    
-                    # Converter para date para comparação
-                    if isinstance(data_consulta, datetime):
-                        data_consulta = data_consulta.date()
-                    
-                    # Verificar se a data selecionada é hoje
-                    eh_hoje = (data_consulta == data_atual_cv)
+                    data_consulta = st.date_input("Data*", min_value=date.today())
                     
                     # GERAR TODOS OS HORÁRIOS POSSÍVEIS (8h às 20h)
                     todos_horarios = []
@@ -258,88 +224,36 @@ elif menu == "📅 Marcar Consulta":
                                 continue
                             todos_horarios.append(time(hora, minuto))
                     
-                    # BUSCAR TODOS OS HORÁRIOS OCUPADOS PARA ESTA DATA
-                    cur = conn.cursor()
-                    
-                    # Criar lista de horários ocupados
-                    horarios_ocupados = []
-                    
-                    # Para cada horário, verificar se está ocupado
+                    # REMOVER APENAS HORÁRIOS JÁ OCUPADOS
+                    horarios_livres = []
                     for horario in todos_horarios:
                         data_hora = datetime.combine(data_consulta, horario)
+                        cur = conn.cursor()
                         cur.execute(
                             "SELECT id FROM consultas WHERE data_consulta = %s AND status IN ('agendada', 'realizada')",
                             (data_hora,)
                         )
-                        if cur.fetchone() is not None:
-                            horarios_ocupados.append(horario)
+                        if cur.fetchone() is None:
+                            horarios_livres.append(horario)
                     
-                    # LÓGICA DIFERENCIADA PARA HOJE VS AMANHÃ/OUTROS DIAS
-                    
-                    # Se for HOJE
-                    if eh_hoje:
-                        st.warning(f"🕐 **ATENÇÃO: Hoje é {data_atual_cv.strftime('%d/%m/%Y')}**")
-                        
-                        # Filtrar apenas horários futuros (depois de agora) que não estão ocupados
-                        horarios_disponiveis = []
-                        
-                        for horario in todos_horarios:
-                            # Verificar se o horário já passou
-                            horario_datetime = datetime.combine(data_consulta, horario)
-                            horario_datetime = CVT.localize(horario_datetime)
-                            
-                            # Se o horário é futuro E não está ocupado
-                            if horario_datetime > agora and horario not in horarios_ocupados:
-                                horarios_disponiveis.append(horario)
-                        
-                        if horarios_disponiveis:
-                            st.info(f"📅 **HOJE**: Mostrando apenas horários futuros (após {agora.strftime('%H:%M')})")
-                            
-                            # Ordenar horários
-                            horarios_disponiveis.sort()
-                            
-                            hora_consulta = st.selectbox(
-                                "Horário*", 
-                                horarios_disponiveis,
-                                format_func=lambda x: x.strftime('%H:%M'),
-                                key="hoje"
-                            )
-                        else:
-                            st.error(f"❌ Não há horários disponíveis para hoje após as {agora.strftime('%H:%M')}!")
-                            hora_consulta = None
-                    
-                    # Se for AMANHÃ ou OUTROS DIAS
+                    # MOSTRAR SELECTBOX COM TODOS OS HORÁRIOS
+                    if horarios_livres:
+                        hora_consulta = st.selectbox(
+                            "Horário*", 
+                            horarios_livres,
+                            format_func=lambda x: x.strftime('%H:%M')
+                        )
                     else:
-                        st.success(f"📅 **{data_consulta.strftime('%d/%m/%Y')}**: Todos os horários disponíveis (8h às 20h)")
-                        
-                        # Mostrar todos os horários que NÃO estão ocupados
-                        horarios_disponiveis = [h for h in todos_horarios if h not in horarios_ocupados]
-                        
-                        if horarios_disponiveis:
-                            # Ordenar horários
-                            horarios_disponiveis.sort()
-                            
-                            hora_consulta = st.selectbox(
-                                "Horário*", 
-                                horarios_disponiveis,
-                                format_func=lambda x: x.strftime('%H:%M'),
-                                key="outros_dias"
-                            )
-                        else:
-                            st.error("❌ Não há horários disponíveis para esta data!")
-                            hora_consulta = None
+                        st.error("❌ Não há horários disponíveis para esta data!")
+                        hora_consulta = None
                 
                 with col2:
                     primeira_consulta = st.checkbox("Primeira Consulta", value=True)
-                    
-                    # Valor padrão baseado no tipo de consulta
-                    valor_padrao = 2500.0 if primeira_consulta else 2000.0
                     valor_consulta = st.number_input("Valor da Consulta (CVE)", 
                                                    min_value=0.0, 
-                                                   value=valor_padrao,
+                                                   value=2500.0 if primeira_consulta else 2000.0,
                                                    step=100.0,
                                                    format="%.0f")
-                    
                     forma_pagamento = st.selectbox("Forma de Pagamento", 
                                                  ["Dinheiro", "Transferência", "MB Way", "Cartão", "Outro"])
                 
@@ -351,14 +265,7 @@ elif menu == "📅 Marcar Consulta":
                     else:
                         data_hora = datetime.combine(data_consulta, hora_consulta)
                         
-                        # Verificação adicional de segurança para horários no passado (hoje)
-                        if eh_hoje:
-                            data_hora_cv = CVT.localize(datetime.combine(data_consulta, hora_consulta))
-                            if data_hora_cv <= agora_cv():
-                                st.error("❌ Não é possível marcar consulta para um horário que já passou!")
-                                st.stop()
-                        
-                        # Verificar se horário está ocupado (segurança - dupla verificação)
+                        # Verificar se horário está ocupado (segurança)
                         cur.execute(
                             "SELECT id FROM consultas WHERE data_consulta = %s AND status IN ('agendada', 'realizada')",
                             (data_hora,)
@@ -381,19 +288,16 @@ elif menu == "📅 Marcar Consulta":
                              forma_pagamento, observacoes)
                         )
                         conn.commit()
-                        
-                        # Mensagem de sucesso com informação do dia
-                        if eh_hoje:
-                            st.success(f"✅ Consulta marcada para HOJE às {hora_consulta.strftime('%H:%M')}")
-                        else:
-                            st.success(f"✅ Consulta marcada para {data_consulta.strftime('%d/%m/%Y')} às {hora_consulta.strftime('%H:%M')}")
+                        st.success(f"✅ Consulta marcada para {data_consulta.strftime('%d/%m/%Y')} às {hora_consulta.strftime('%H:%M')}")
                         st.balloons()
                     
     except Exception as e:
         st.error(f"❌ Erro: {e}")
     finally:
         if 'conn' in locals() and conn:
-            conn.close()# 3. VER PACIENTES
+            conn.close()
+
+# 3. VER PACIENTES
 elif menu == "👥 Ver Pacientes":
     st.header("👥 Lista de Pacientes")
     
@@ -424,6 +328,7 @@ elif menu == "👥 Ver Pacientes":
             with col1:
                 st.metric("Total de Pacientes", len(pacientes_df))
             with col2:
+                from datetime import datetime
                 primeiro_dia_mes = datetime.now().replace(day=1)
                 cadastros_mes = 0
                 for data_str in pacientes_df['Cadastro']:
@@ -454,49 +359,40 @@ elif menu == "🗓️ Agenda da Semana":
         if conn is None:
             st.error("❌ Não foi possível conectar ao banco de dados")
             st.stop()
-        
-        # Data atual em Cabo Verde
-        hoje = hoje_cv()
-        
+            
         if opcao_agenda == "Hoje":
-            query = """
+            agenda_df = pd.read_sql("""
                 SELECT c.id, p.nome_completo, c.data_consulta, 
                        CASE WHEN c.primeira_consulta THEN 'Primeira' ELSE 'Retorno' END as tipo,
                        c.status, c.valor_consulta,
                        c.forma_pagamento
                 FROM consultas c
                 JOIN pacientes p ON c.paciente_id = p.id
-                WHERE DATE(c.data_consulta) = DATE(%s)
+                WHERE DATE(c.data_consulta) = CURRENT_DATE
                 ORDER BY c.data_consulta
-            """
-            params = (hoje,)
+            """, conn)
         elif opcao_agenda == "Amanhã":
-            amanha = hoje + timedelta(days=1)
-            query = """
+            agenda_df = pd.read_sql("""
                 SELECT c.id, p.nome_completo, c.data_consulta, 
                        CASE WHEN c.primeira_consulta THEN 'Primeira' ELSE 'Retorno' END as tipo,
                        c.status, c.valor_consulta,
                        c.forma_pagamento
                 FROM consultas c
                 JOIN pacientes p ON c.paciente_id = p.id
-                WHERE DATE(c.data_consulta) = DATE(%s)
+                WHERE DATE(c.data_consulta) = CURRENT_DATE + INTERVAL '1 day'
                 ORDER BY c.data_consulta
-            """
-            params = (amanha,)
+            """, conn)
         else:
-            query = """
+            agenda_df = pd.read_sql("""
                 SELECT c.id, p.nome_completo, c.data_consulta, 
                        CASE WHEN c.primeira_consulta THEN 'Primeira' ELSE 'Retorno' END as tipo,
                        c.status, c.valor_consulta,
                        c.forma_pagamento
                 FROM consultas c
                 JOIN pacientes p ON c.paciente_id = p.id
-                WHERE DATE(c.data_consulta) BETWEEN DATE(%s) AND DATE(%s)
+                WHERE c.data_consulta BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'
                 ORDER BY c.data_consulta
-            """
-            params = (hoje, hoje + timedelta(days=7))
-        
-        agenda_df = pd.read_sql(query, conn, params=params)
+            """, conn)
         
         if not agenda_df.empty:
             # Criar colunas para os cabeçalhos
@@ -553,8 +449,8 @@ elif menu == "🗓️ Agenda da Semana":
                         else:
                             st.write("—")
                     
-                    # Mostrar data e valor em linha separada
-                    st.caption(f"📅 {row['data_consulta'].strftime('%d/%m/%Y')} | 💰 {converter_numpy_para_python(row['valor_consulta']):,.0f} CVE")
+                    # Mostrar valor em linha separada
+                    st.caption(f"💰 {converter_numpy_para_python(row['valor_consulta']):,.0f} CVE")
                     st.divider()
                     
             # Estatísticas no final
@@ -590,18 +486,15 @@ elif menu == "✅ Registrar Consulta Realizada":
         if conn is None:
             st.error("❌ Não foi possível conectar ao banco de dados")
             st.stop()
-        
-        # Data atual em Cabo Verde
-        hoje = hoje_cv()
-        
+            
         consultas_df = pd.read_sql("""
             SELECT c.id, p.nome_completo, c.data_consulta, c.valor_consulta,
                    c.pagamento_realizado, c.status
             FROM consultas c
             JOIN pacientes p ON c.paciente_id = p.id
-            WHERE c.status = 'agendada' AND DATE(c.data_consulta) <= DATE(%s)
+            WHERE c.status = 'agendada' AND c.data_consulta <= CURRENT_DATE + INTERVAL '1 day'
             ORDER BY c.data_consulta
-        """, conn, params=(hoje,))
+        """, conn)
         
         if not consultas_df.empty:
             consultas_df['display'] = consultas_df['nome_completo'] + " - " + consultas_df['data_consulta'].dt.strftime('%d/%m/%Y %H:%M')
