@@ -221,39 +221,53 @@ elif menu == "📅 Marcar Consulta":
                 
                 with col2: 
                     primeira_consulta = st.checkbox("Primeira Consulta", value=True)
-                    valor_consulta = st.number_input("Valor da Consulta (CVE)", 
-                                                   min_value=0.0, 
-                                                   value=2500.0 if primeira_consulta else 2000.0,
-                                                   step=100.0)
+                    
+                    # CORREÇÃO: Agora você pode digitar qualquer valor
+                    valor_consulta = st.number_input(
+                        "Valor da Consulta (CVE)", 
+                        min_value=0.0, 
+                        value=0.0,  # Começa com 0 para você digitar
+                        step=100.0,
+                        format="%.0f",  # Mostra sem casas decimais
+                        key="valor_consulta"
+                    )
+                    
                     forma_pagamento = st.selectbox("Forma de Pagamento", 
                                                  ["Dinheiro", "Transferência", "MB Way", "Outro"])
                 
                 observacoes = st.text_area("Observações Técnicas")
                 
+                # Mostrar o valor digitado para confirmar
+                if valor_consulta > 0:
+                    st.info(f"💵 Valor a ser cobrado: **{valor_consulta:,.0f} CVE**")
+                
                 if st.form_submit_button("📅 Agendar Consulta"):
-                    paciente_row = pacientes_df[pacientes_df['nome_completo'] == paciente_nome].iloc[0]
-                    paciente_id = converter_numpy_para_python(paciente_row['id'])
-                    
-                    data_hora = datetime.combine(data_consulta, hora_consulta)
-                    
-                    cur = conn.cursor()
-                    cur.execute(
-                        """INSERT INTO consultas 
-                        (paciente_id, data_consulta, primeira_consulta, valor_consulta, 
-                         forma_pagamento, observacoes_tecnicas) 
-                        VALUES (%s, %s, %s, %s, %s, %s)""",
-                        (paciente_id, data_hora, primeira_consulta, valor_consulta, 
-                         forma_pagamento, observacoes)
-                    )
-                    conn.commit()
-                    st.success(f"✅ Consulta marcada para {data_consulta.strftime('%d/%m/%Y')} às {hora_consulta.strftime('%H:%M')}")
-                    
+                    if valor_consulta <= 0:
+                        st.error("❌ Por favor, informe o valor da consulta")
+                    else:
+                        paciente_row = pacientes_df[pacientes_df['nome_completo'] == paciente_nome].iloc[0]
+                        paciente_id = converter_numpy_para_python(paciente_row['id'])
+                        
+                        data_hora = datetime.combine(data_consulta, hora_consulta)
+                        
+                        cur = conn.cursor()
+                        cur.execute(
+                            """INSERT INTO consultas 
+                            (paciente_id, data_consulta, primeira_consulta, valor_consulta, 
+                             forma_pagamento, observacoes_tecnicas) 
+                            VALUES (%s, %s, %s, %s, %s, %s)""",
+                            (paciente_id, data_hora, primeira_consulta, valor_consulta, 
+                             forma_pagamento, observacoes)
+                        )
+                        conn.commit()
+                        st.success(f"✅ Consulta marcada para {data_consulta.strftime('%d/%m/%Y')} às {hora_consulta.strftime('%H:%M')}")
+                        st.success(f"💰 Valor: {valor_consulta:,.0f} CVE")
+                        
     except Exception as e:
         st.error(f"❌ Erro: {e}")
     finally:
         if 'conn' in locals() and conn:
             conn.close()
-
 # 3. VER PACIENTES
 elif menu == "👥 Ver Pacientes":
     st.header("👥 Lista de Pacientes")
