@@ -7,8 +7,20 @@ import numpy as np
 import warnings
 warnings.filterwarnings('ignore')
 
-# CONFIGURAÇÃO DE SEGURANÇA - SENHA PARA ÁREAS RESTRITAS
-SENHA_ACESSO = "Viana2024"  # Altere para sua senha pessoal
+# ============================================================
+# CONFIGURAÇÃO DE SEGURANÇA - SENHA VIA SECRETS DO STREAMLIT
+# ============================================================
+def obter_senha():
+    """Obtém a senha dos secrets do Streamlit"""
+    try:
+        # Tenta pegar dos secrets do Streamlit Cloud
+        return st.secrets["SENHA_ACESSO"]
+    except:
+        # Senha padrão apenas para desenvolvimento local
+        return "Viana2024"
+
+# Senha de acesso
+SENHA_ACESSO = obter_senha()
 
 # Função para verificar autenticação
 def verificar_autenticacao():
