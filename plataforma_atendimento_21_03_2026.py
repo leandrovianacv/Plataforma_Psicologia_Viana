@@ -7,6 +7,45 @@ import numpy as np
 import warnings
 warnings.filterwarnings('ignore')
 
+# CONFIGURAÇÃO DE SEGURANÇA - SENHA PARA ÁREA DE PACIENTES
+SENHA_PACIENTES = "Viana2024"  # Altere para sua senha pessoal
+
+# Função para verificar autenticação de pacientes
+def verificar_acesso_pacientes():
+    """Verifica se o usuário tem acesso aos dados dos pacientes"""
+    if 'acesso_pacientes' not in st.session_state:
+        st.session_state.acesso_pacientes = False
+    return st.session_state.acesso_pacientes
+
+def autenticar_pacientes():
+    """Tela de autenticação para acessar dados de pacientes"""
+    st.markdown("---")
+    st.warning("🔒 **Área Restrita - Dados de Pacientes**")
+    st.markdown("Para visualizar os dados dos pacientes, é necessário autenticação.")
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        senha = st.text_input("Digite a senha de acesso aos pacientes:", 
+                              type="password", 
+                              placeholder="********",
+                              key="senha_pacientes")
+        
+        if st.button("🔓 Autorizar Acesso", type="primary", use_container_width=True):
+            if senha == SENHA_PACIENTES:
+                st.session_state.acesso_pacientes = True
+                st.success("✅ Acesso autorizado!")
+                st.rerun()
+            else:
+                st.error("❌ Senha incorreta! Acesso negado.")
+                st.session_state.acesso_pacientes = False
+
+def logout_pacientes():
+    """Botão para revogar acesso aos pacientes"""
+    if st.session_state.acesso_pacientes:
+        if st.sidebar.button("🔒 Bloquear Acesso a Pacientes", type="secondary"):
+            st.session_state.acesso_pacientes = False
+            st.rerun()
+
 # CORREÇÃO 1: Função para converter numpy.int64
 def converter_numpy_para_python(valor):
     """Converte tipos numpy para tipos Python nativos"""
@@ -26,11 +65,10 @@ st.set_page_config(
     layout="wide"
 )
 
-# Conexão com Supabase (via Session Pooler) - VERSÃO SEGURA
+# Conexão com Supabase
 def conectar_banco():
     """Conecta ao Supabase usando Session Pooler - APENAS via secrets"""
     try:
-        # APENAS usa secrets - NUNCA coloque senha no código!
         if "DB_URL" in st.secrets:
             db_url = st.secrets["DB_URL"]
             import re
@@ -45,7 +83,6 @@ def conectar_banco():
                     password=password
                 )
         else:
-            # Para teste local - usa variável de ambiente (mais seguro)
             db_url = os.getenv("DB_URL")
             if db_url:
                 import re
@@ -60,13 +97,13 @@ def conectar_banco():
                         password=password
                     )
             else:
-                st.error("❌ DB_URL não configurada! Use secrets ou variável de ambiente.")
+                st.error("❌ DB_URL não configurada!")
                 return None
     except Exception as e:
         st.error(f"Erro ao conectar: {e}")
         return None
 
-# Inicializar banco (criar tabelas se não existirem)
+# Inicializar banco
 def inicializar_banco():
     """Garante que as tabelas necessárias existam"""
     try:
@@ -76,7 +113,6 @@ def inicializar_banco():
             
         cur = conn.cursor()
         
-        # Tabela pacientes
         cur.execute("""
             CREATE TABLE IF NOT EXISTS pacientes (
                 id SERIAL PRIMARY KEY,
@@ -95,13 +131,11 @@ def inicializar_banco():
             );
         """)
         
-        # Adicionar coluna local se não existir
         try:
             cur.execute("ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS local VARCHAR(100)")
         except:
             pass
         
-        # Tabela consultas
         cur.execute("""
             CREATE TABLE IF NOT EXISTS consultas (
                 id SERIAL PRIMARY KEY,
@@ -128,7 +162,7 @@ def inicializar_banco():
 if inicializar_banco():
     st.sidebar.success("✅ Conectado ao Supabase")
 else:
-    st.sidebar.error("❌ Falha na conexão com Supabase")
+    st.sidebar.error("❌ Falha na conexão")
 
 # HEADER PERSONALIZADO
 st.markdown("<h1 style='text-align: center; color: #1f77b4;'>🧠 PSICARE BY BELINDA VIANA</h1>", unsafe_allow_html=True)
@@ -146,66 +180,73 @@ menu = st.sidebar.selectbox("Selecione uma opção:", [
     "📊 Estatísticas"
 ])
 
-# 1. CADASTRAR PACIENTE - COM DATA DE NASCIMENTO DESDE 1930
+# Botão de logout apenas se estiver autenticado
+if verificar_acesso_pacientes():
+    logout_pacientes()
+
+# 1. CADASTRAR PACIENTE - COM SENHA
 if menu == "➕ Cadastrar Paciente":
     st.header("👤 Cadastrar Novo Paciente")
     
-    with st.form("form_paciente", clear_on_submit=True):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            nome = st.text_input("Nome Completo*", placeholder="Nome completo do paciente")
-            telefone = st.text_input("Telefone*", placeholder="+238 XXX XX XX") 
-            email = st.text_input("Email", placeholder="paciente@email.cv")
-            local = st.text_input("Localidade*", placeholder="Cidade/Bairro onde reside")
+    # Verificar autenticação para cadastrar pacientes
+    if not verificar_acesso_pacientes():
+        st.warning("⚠️ Área restrita! Cadastro de pacientes requer autenticação.")
+        autenticar_pacientes()
+    else:
+        with st.form("form_paciente", clear_on_submit=True):
+            col1, col2 = st.columns(2)
             
-            # Data de nascimento desde 1930
-            data_nascimento = st.date_input(
-                "Data de Nascimento", 
-                min_value=date(1930, 1, 1),
-                max_value=date.today(),
-                value=None,
-                format="DD/MM/YYYY"
-            )
+            with col1:
+                nome = st.text_input("Nome Completo*", placeholder="Nome completo do paciente")
+                telefone = st.text_input("Telefone*", placeholder="+238 XXX XX XX") 
+                email = st.text_input("Email", placeholder="paciente@email.cv")
+                local = st.text_input("Localidade*", placeholder="Cidade/Bairro onde reside")
+                data_nascimento = st.date_input(
+                    "Data de Nascimento", 
+                    min_value=date(1930, 1, 1),
+                    max_value=date.today(),
+                    value=None,
+                    format="DD/MM/YYYY"
+                )
+                
+            with col2:
+                profissao = st.text_input("Profissão", placeholder="Profissão atual")
+                como_chegou = st.selectbox("Como chegou até nós", 
+                                         ["Indicação", "Internet", "Redes Sociais", "Outro"])
+                queixa_principal = st.text_area("Queixa Principal*", 
+                                              placeholder="Descreva a queixa principal...", 
+                                              height=100)
             
-        with col2:
-            profissao = st.text_input("Profissão", placeholder="Profissão atual")
-            como_chegou = st.selectbox("Como chegou até nós", 
-                                     ["Indicação", "Internet", "Redes Sociais", "Outro"])
-            queixa_principal = st.text_area("Queixa Principal*", 
-                                          placeholder="Descreva a queixa principal...", 
-                                          height=100)
-        
-        medicacoes = st.text_input("Medicações Atuais", placeholder="Medicações em uso")
-        observacoes = st.text_area("Observações Iniciais", 
-                                 placeholder="Observações relevantes...",
-                                 height=80)
-        
-        if st.form_submit_button("💾 Salvar Paciente"):
-            if nome and telefone and queixa_principal and local:
-                try:
-                    conn = conectar_banco()
-                    cur = conn.cursor()
-                    cur.execute(
-                        """INSERT INTO pacientes 
-                        (nome_completo, telefone, email, data_nascimento, profissao, 
-                         como_chegou, queixa_principal, medicacoes_atuais, observacoes_iniciais, local) 
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-                        (nome, telefone, email, data_nascimento, profissao, como_chegou, 
-                         queixa_principal, medicacoes, observacoes, local)
-                    )
-                    conn.commit()
-                    st.success("✅ Paciente cadastrado com sucesso!")
-                    st.balloons()
-                except Exception as e:
-                    st.error(f"❌ Erro ao salvar: {e}")
-                finally:
-                    if conn:
-                        conn.close()
-            else:
-                st.error("❌ Preencha os campos obrigatórios (*)")
+            medicacoes = st.text_input("Medicações Atuais", placeholder="Medicações em uso")
+            observacoes = st.text_area("Observações Iniciais", 
+                                     placeholder="Observações relevantes...",
+                                     height=80)
+            
+            if st.form_submit_button("💾 Salvar Paciente"):
+                if nome and telefone and queixa_principal and local:
+                    try:
+                        conn = conectar_banco()
+                        cur = conn.cursor()
+                        cur.execute(
+                            """INSERT INTO pacientes 
+                            (nome_completo, telefone, email, data_nascimento, profissao, 
+                             como_chegou, queixa_principal, medicacoes_atuais, observacoes_iniciais, local) 
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                            (nome, telefone, email, data_nascimento, profissao, como_chegou, 
+                             queixa_principal, medicacoes, observacoes, local)
+                        )
+                        conn.commit()
+                        st.success("✅ Paciente cadastrado com sucesso!")
+                        st.balloons()
+                    except Exception as e:
+                        st.error(f"❌ Erro ao salvar: {e}")
+                    finally:
+                        if conn:
+                            conn.close()
+                else:
+                    st.error("❌ Preencha os campos obrigatórios (*)")
 
-# 2. MARCAR CONSULTA  
+# 2. MARCAR CONSULTA - SEM SENHA
 elif menu == "📅 Marcar Consulta":
     st.header("📅 Marcar Nova Consulta")
     
@@ -215,6 +256,7 @@ elif menu == "📅 Marcar Consulta":
             st.error("❌ Não foi possível conectar ao banco de dados")
             st.stop()
             
+        # Buscar pacientes ativos - sem mostrar dados sensíveis
         pacientes_df = pd.read_sql("SELECT id, nome_completo FROM pacientes WHERE ativo = TRUE", conn)
         
         if pacientes_df.empty:
@@ -230,23 +272,18 @@ elif menu == "📅 Marcar Consulta":
                 
                 with col2: 
                     primeira_consulta = st.checkbox("Primeira Consulta", value=True)
-                    
-                    # CORREÇÃO: Agora você pode digitar qualquer valor
                     valor_consulta = st.number_input(
                         "Valor da Consulta (CVE)", 
                         min_value=0.0, 
-                        value=0.0,  # Começa com 0 para você digitar
+                        value=0.0,
                         step=100.0,
-                        format="%.0f",  # Mostra sem casas decimais
-                        key="valor_consulta"
+                        format="%.0f"
                     )
-                    
                     forma_pagamento = st.selectbox("Forma de Pagamento", 
                                                  ["Dinheiro", "Transferência", "MB Way", "Outro"])
                 
                 observacoes = st.text_area("Observações Técnicas")
                 
-                # Mostrar o valor digitado para confirmar
                 if valor_consulta > 0:
                     st.info(f"💵 Valor a ser cobrado: **{valor_consulta:,.0f} CVE**")
                 
@@ -256,7 +293,6 @@ elif menu == "📅 Marcar Consulta":
                     else:
                         paciente_row = pacientes_df[pacientes_df['nome_completo'] == paciente_nome].iloc[0]
                         paciente_id = converter_numpy_para_python(paciente_row['id'])
-                        
                         data_hora = datetime.combine(data_consulta, hora_consulta)
                         
                         cur = conn.cursor()
@@ -270,7 +306,6 @@ elif menu == "📅 Marcar Consulta":
                         )
                         conn.commit()
                         st.success(f"✅ Consulta marcada para {data_consulta.strftime('%d/%m/%Y')} às {hora_consulta.strftime('%H:%M')}")
-                        st.success(f"💰 Valor: {valor_consulta:,.0f} CVE")
                         
     except Exception as e:
         st.error(f"❌ Erro: {e}")
@@ -278,178 +313,181 @@ elif menu == "📅 Marcar Consulta":
         if 'conn' in locals() and conn:
             conn.close()
 
-# 3. VER PACIENTES
+# 3. VER PACIENTES - COM SENHA
 elif menu == "👥 Ver Pacientes":
     st.header("👥 Lista de Pacientes")
     
-    try:
-        conn = conectar_banco()
-        if conn is None:
-            st.error("❌ Não foi possível conectar ao banco de dados")
-            st.stop()
-            
-        pacientes_df = pd.read_sql("""
-            SELECT id, nome_completo, telefone, email, profissao, queixa_principal, local,
-                   TO_CHAR(data_cadastro, 'DD/MM/YYYY') as data_cadastro,
-                   TO_CHAR(data_nascimento, 'DD/MM/YYYY') as data_nascimento
-            FROM pacientes 
-            WHERE ativo = TRUE
-            ORDER BY nome_completo
-        """, conn)
-        
-        if not pacientes_df.empty:
-            st.dataframe(pacientes_df, use_container_width=True)
-            
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Total de Pacientes", len(pacientes_df))
-            with col2:
-                from datetime import datetime
-                primeiro_dia_mes = datetime.now().replace(day=1)
+    if not verificar_acesso_pacientes():
+        st.warning("⚠️ Área restrita! Visualização de pacientes requer autenticação.")
+        autenticar_pacientes()
+    else:
+        try:
+            conn = conectar_banco()
+            if conn is None:
+                st.error("❌ Não foi possível conectar ao banco de dados")
+                st.stop()
                 
-                cadastros_mes = 0
-                for data_str in pacientes_df['data_cadastro']:
-                    try:
-                        data_obj = datetime.strptime(data_str, '%d/%m/%Y')
-                        if data_obj >= primeiro_dia_mes:
-                            cadastros_mes += 1
-                    except:
-                        pass
+            pacientes_df = pd.read_sql("""
+                SELECT id, nome_completo, telefone, email, profissao, queixa_principal, local,
+                       TO_CHAR(data_cadastro, 'DD/MM/YYYY') as data_cadastro,
+                       TO_CHAR(data_nascimento, 'DD/MM/YYYY') as data_nascimento
+                FROM pacientes 
+                WHERE ativo = TRUE
+                ORDER BY nome_completo
+            """, conn)
+            
+            if not pacientes_df.empty:
+                st.dataframe(pacientes_df, use_container_width=True)
                 
-                st.metric("Cadastros este Mês", cadastros_mes)
-            
-            with col3:
-                # Contar pacientes por localidade
-                locais = pacientes_df['local'].value_counts()
-                if len(locais) > 0:
-                    st.metric("Localidades diferentes", len(locais))
-        else:
-            st.info("📝 Nenhum paciente cadastrado")
-            
-    except Exception as e:
-        st.error(f"❌ Erro ao carregar pacientes: {e}")
-    finally:
-        if 'conn' in locals() and conn:
-            conn.close()
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Total de Pacientes", len(pacientes_df))
+                with col2:
+                    from datetime import datetime
+                    primeiro_dia_mes = datetime.now().replace(day=1)
+                    cadastros_mes = 0
+                    for data_str in pacientes_df['data_cadastro']:
+                        try:
+                            data_obj = datetime.strptime(data_str, '%d/%m/%Y')
+                            if data_obj >= primeiro_dia_mes:
+                                cadastros_mes += 1
+                        except:
+                            pass
+                    st.metric("Cadastros este Mês", cadastros_mes)
+                with col3:
+                    locais = pacientes_df['local'].value_counts()
+                    if len(locais) > 0:
+                        st.metric("Localidades diferentes", len(locais))
+            else:
+                st.info("📝 Nenhum paciente cadastrado")
+                
+        except Exception as e:
+            st.error(f"❌ Erro ao carregar pacientes: {e}")
+        finally:
+            if 'conn' in locals() and conn:
+                conn.close()
 
-# 4. EDITAR PACIENTE
+# 4. EDITAR PACIENTE - COM SENHA
 elif menu == "✏️ Editar Paciente":
     st.header("✏️ Editar Dados do Paciente")
     
-    try:
-        conn = conectar_banco()
-        if conn is None:
-            st.error("❌ Não foi possível conectar ao banco de dados")
-            st.stop()
+    if not verificar_acesso_pacientes():
+        st.warning("⚠️ Área restrita! Edição de pacientes requer autenticação.")
+        autenticar_pacientes()
+    else:
+        try:
+            conn = conectar_banco()
+            if conn is None:
+                st.error("❌ Não foi possível conectar ao banco de dados")
+                st.stop()
+                
+            pacientes_df = pd.read_sql("""
+                SELECT id, nome_completo, telefone, email, data_nascimento, 
+                       profissao, como_chegou, queixa_principal, medicacoes_atuais, 
+                       observacoes_iniciais, local
+                FROM pacientes 
+                WHERE ativo = TRUE
+                ORDER BY nome_completo
+            """, conn)
             
-        pacientes_df = pd.read_sql("""
-            SELECT id, nome_completo, telefone, email, data_nascimento, 
-                   profissao, como_chegou, queixa_principal, medicacoes_atuais, 
-                   observacoes_iniciais, local
-            FROM pacientes 
-            WHERE ativo = TRUE
-            ORDER BY nome_completo
-        """, conn)
-        
-        if pacientes_df.empty:
-            st.warning("⚠️ Nenhum paciente cadastrado para editar")
-        else:
-            paciente_selecionado = st.selectbox(
-                "Selecione o paciente para editar:", 
-                pacientes_df['nome_completo']
-            )
-            
-            paciente_data = pacientes_df[pacientes_df['nome_completo'] == paciente_selecionado].iloc[0]
-            paciente_id = converter_numpy_para_python(paciente_data['id'])
-            
-            with st.form("form_editar_paciente"):
-                st.subheader(f"Editando: {paciente_selecionado}")
+            if pacientes_df.empty:
+                st.warning("⚠️ Nenhum paciente cadastrado para editar")
+            else:
+                paciente_selecionado = st.selectbox(
+                    "Selecione o paciente para editar:", 
+                    pacientes_df['nome_completo']
+                )
                 
-                col1, col2 = st.columns(2)
+                paciente_data = pacientes_df[pacientes_df['nome_completo'] == paciente_selecionado].iloc[0]
+                paciente_id = converter_numpy_para_python(paciente_data['id'])
                 
-                with col1:
-                    nome = st.text_input("Nome Completo*", value=paciente_data['nome_completo'])
-                    telefone = st.text_input("Telefone*", value=paciente_data['telefone'])
-                    email = st.text_input("Email", value=paciente_data['email'] if paciente_data['email'] else "")
-                    local = st.text_input("Localidade*", value=paciente_data['local'] if paciente_data['local'] else "")
+                with st.form("form_editar_paciente"):
+                    st.subheader(f"Editando: {paciente_selecionado}")
                     
-                    # Data de nascimento
-                    data_nasc = None
-                    if paciente_data['data_nascimento']:
-                        try:
-                            data_nasc = paciente_data['data_nascimento']
-                            if isinstance(data_nasc, str):
-                                data_nasc = datetime.strptime(data_nasc, '%Y-%m-%d').date()
-                        except:
-                            data_nasc = None
+                    col1, col2 = st.columns(2)
                     
-                    data_nascimento = st.date_input(
-                        "Data de Nascimento",
-                        value=data_nasc,
-                        min_value=date(1930, 1, 1),
-                        max_value=date.today(),
-                        format="DD/MM/YYYY"
-                    )
+                    with col1:
+                        nome = st.text_input("Nome Completo*", value=paciente_data['nome_completo'])
+                        telefone = st.text_input("Telefone*", value=paciente_data['telefone'])
+                        email = st.text_input("Email", value=paciente_data['email'] if paciente_data['email'] else "")
+                        local = st.text_input("Localidade*", value=paciente_data['local'] if paciente_data['local'] else "")
+                        
+                        data_nasc = None
+                        if paciente_data['data_nascimento']:
+                            try:
+                                data_nasc = paciente_data['data_nascimento']
+                                if isinstance(data_nasc, str):
+                                    data_nasc = datetime.strptime(data_nasc, '%Y-%m-%d').date()
+                            except:
+                                data_nasc = None
+                        
+                        data_nascimento = st.date_input(
+                            "Data de Nascimento",
+                            value=data_nasc,
+                            min_value=date(1930, 1, 1),
+                            max_value=date.today(),
+                            format="DD/MM/YYYY"
+                        )
+                        
+                    with col2:
+                        profissao = st.text_input("Profissão", value=paciente_data['profissao'] if paciente_data['profissao'] else "")
+                        como_chegou = st.selectbox(
+                            "Como chegou até nós",
+                            ["Indicação", "Internet", "Redes Sociais", "Outro"],
+                            index=["Indicação", "Internet", "Redes Sociais", "Outro"].index(paciente_data['como_chegou']) if paciente_data['como_chegou'] in ["Indicação", "Internet", "Redes Sociais", "Outro"] else 0
+                        )
+                        queixa_principal = st.text_area("Queixa Principal*", value=paciente_data['queixa_principal'], height=100)
                     
-                with col2:
-                    profissao = st.text_input("Profissão", value=paciente_data['profissao'] if paciente_data['profissao'] else "")
-                    como_chegou = st.selectbox(
-                        "Como chegou até nós",
-                        ["Indicação", "Internet", "Redes Sociais", "Outro"],
-                        index=["Indicação", "Internet", "Redes Sociais", "Outro"].index(paciente_data['como_chegou']) if paciente_data['como_chegou'] in ["Indicação", "Internet", "Redes Sociais", "Outro"] else 0
-                    )
-                    queixa_principal = st.text_area("Queixa Principal*", value=paciente_data['queixa_principal'], height=100)
-                
-                medicacoes = st.text_input("Medicações Atuais", value=paciente_data['medicacoes_atuais'] if paciente_data['medicacoes_atuais'] else "")
-                observacoes = st.text_area("Observações", value=paciente_data['observacoes_iniciais'] if paciente_data['observacoes_iniciais'] else "", height=80)
-                
-                col_botoes1, col_botoes2, col_botoes3 = st.columns(3)
-                
-                with col_botoes1:
-                    if st.form_submit_button("💾 Salvar Alterações", type="primary", use_container_width=True):
-                        if nome and telefone and queixa_principal and local:
+                    medicacoes = st.text_input("Medicações Atuais", value=paciente_data['medicacoes_atuais'] if paciente_data['medicacoes_atuais'] else "")
+                    observacoes = st.text_area("Observações", value=paciente_data['observacoes_iniciais'] if paciente_data['observacoes_iniciais'] else "", height=80)
+                    
+                    col_botoes1, col_botoes2, col_botoes3 = st.columns(3)
+                    
+                    with col_botoes1:
+                        if st.form_submit_button("💾 Salvar Alterações", type="primary", use_container_width=True):
+                            if nome and telefone and queixa_principal and local:
+                                try:
+                                    cur = conn.cursor()
+                                    cur.execute("""
+                                        UPDATE pacientes 
+                                        SET nome_completo = %s, telefone = %s, email = %s, 
+                                            data_nascimento = %s, profissao = %s, como_chegou = %s,
+                                            queixa_principal = %s, medicacoes_atuais = %s, 
+                                            observacoes_iniciais = %s, local = %s
+                                        WHERE id = %s
+                                    """, (nome, telefone, email, data_nascimento, profissao, 
+                                          como_chegou, queixa_principal, medicacoes, observacoes, 
+                                          local, paciente_id))
+                                    conn.commit()
+                                    st.success("✅ Dados do paciente atualizados com sucesso!")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"❌ Erro ao atualizar: {e}")
+                            else:
+                                st.error("❌ Preencha os campos obrigatórios (*)")
+                    
+                    with col_botoes2:
+                        if st.form_submit_button("🗑️ Desativar Paciente", use_container_width=True):
                             try:
                                 cur = conn.cursor()
-                                cur.execute("""
-                                    UPDATE pacientes 
-                                    SET nome_completo = %s, telefone = %s, email = %s, 
-                                        data_nascimento = %s, profissao = %s, como_chegou = %s,
-                                        queixa_principal = %s, medicacoes_atuais = %s, 
-                                        observacoes_iniciais = %s, local = %s
-                                    WHERE id = %s
-                                """, (nome, telefone, email, data_nascimento, profissao, 
-                                      como_chegou, queixa_principal, medicacoes, observacoes, 
-                                      local, paciente_id))
+                                cur.execute("UPDATE pacientes SET ativo = FALSE WHERE id = %s", (paciente_id,))
                                 conn.commit()
-                                st.success("✅ Dados do paciente atualizados com sucesso!")
+                                st.warning("⚠️ Paciente desativado com sucesso!")
                                 st.rerun()
                             except Exception as e:
-                                st.error(f"❌ Erro ao atualizar: {e}")
-                        else:
-                            st.error("❌ Preencha os campos obrigatórios (*)")
-                
-                with col_botoes2:
-                    if st.form_submit_button("🗑️ Desativar Paciente", use_container_width=True):
-                        try:
-                            cur = conn.cursor()
-                            cur.execute("UPDATE pacientes SET ativo = FALSE WHERE id = %s", (paciente_id,))
-                            conn.commit()
-                            st.warning("⚠️ Paciente desativado com sucesso!")
+                                st.error(f"❌ Erro ao desativar: {e}")
+                    
+                    with col_botoes3:
+                        if st.form_submit_button("❌ Cancelar", use_container_width=True):
                             st.rerun()
-                        except Exception as e:
-                            st.error(f"❌ Erro ao desativar: {e}")
-                
-                with col_botoes3:
-                    if st.form_submit_button("❌ Cancelar", use_container_width=True):
-                        st.rerun()
-                        
-    except Exception as e:
-        st.error(f"❌ Erro ao carregar dados: {e}")
-    finally:
-        if 'conn' in locals() and conn:
-            conn.close()
+                            
+        except Exception as e:
+            st.error(f"❌ Erro ao carregar dados: {e}")
+        finally:
+            if 'conn' in locals() and conn:
+                conn.close()
 
-# 5. AGENDA DA SEMANA - COM OPÇÃO DE CANCELAR E REAGENDAR
+# 5. AGENDA DA SEMANA - SEM SENHA (mostra apenas nomes, não dados completos)
 elif menu == "🗓️ Agenda da Semana":
     st.header("🗓️ Agenda de Consultas")
     
@@ -496,7 +534,6 @@ elif menu == "🗓️ Agenda da Semana":
             """, conn)
         
         if not agenda_df.empty:
-            # Criar colunas para os cabeçalhos
             col1, col2, col3, col4, col5, col6 = st.columns([3, 1, 1, 1, 1, 1])
             with col1:
                 st.markdown("**Paciente**")
@@ -540,12 +577,10 @@ elif menu == "🗓️ Agenda da Semana":
                         st.write(f"💰 {converter_numpy_para_python(row['valor_consulta']):,.0f}")
                     
                     with col6:
-                        # Só mostrar botões se a consulta estiver agendada
                         if row['status'] == 'agendada':
                             consulta_id = converter_numpy_para_python(row['id'])
                             paciente_id = converter_numpy_para_python(row['paciente_id'])
                             
-                            # Botão de reagendar
                             if st.button(f"🔄 Reagendar", key=f"reschedule_{consulta_id}", use_container_width=True):
                                 st.session_state['reagendar_consulta'] = consulta_id
                                 st.session_state['reagendar_paciente'] = paciente_id
@@ -553,7 +588,6 @@ elif menu == "🗓️ Agenda da Semana":
                                 st.session_state['reagendar_data_original'] = row['data_consulta']
                                 st.rerun()
                             
-                            # Botão de cancelar
                             if st.button(f"❌ Cancelar", key=f"cancel_{consulta_id}", use_container_width=True):
                                 try:
                                     cur = conn.cursor()
@@ -568,7 +602,6 @@ elif menu == "🗓️ Agenda da Semana":
                     
                     st.divider()
             
-            # Verificar se está no modo de reagendamento
             if 'reagendar_consulta' in st.session_state:
                 st.subheader(f"🔄 Reagendar Consulta - {st.session_state['reagendar_paciente_nome']}")
                 st.info(f"Data original: {st.session_state['reagendar_data_original'].strftime('%d/%m/%Y %H:%M')}")
@@ -594,7 +627,6 @@ elif menu == "🗓️ Agenda da Semana":
                             try:
                                 cur = conn.cursor()
                                 
-                                # Atualizar a consulta existente
                                 if manter_valor:
                                     cur.execute("""
                                         UPDATE consultas 
@@ -611,7 +643,6 @@ elif menu == "🗓️ Agenda da Semana":
                                 conn.commit()
                                 st.success(f"✅ Consulta reagendada para {nova_data.strftime('%d/%m/%Y')} às {novo_horario.strftime('%H:%M')}")
                                 
-                                # Limpar sessão
                                 del st.session_state['reagendar_consulta']
                                 del st.session_state['reagendar_paciente']
                                 del st.session_state['reagendar_paciente_nome']
@@ -623,14 +654,12 @@ elif menu == "🗓️ Agenda da Semana":
                     
                     with col_botoes2:
                         if st.form_submit_button("❌ Cancelar", use_container_width=True):
-                            # Limpar sessão
                             del st.session_state['reagendar_consulta']
                             del st.session_state['reagendar_paciente']
                             del st.session_state['reagendar_paciente_nome']
                             del st.session_state['reagendar_data_original']
                             st.rerun()
             
-            # Estatísticas no final
             total_consultas = len(agenda_df)
             realizadas = len(agenda_df[agenda_df['status'] == 'realizada'])
             faltas = len(agenda_df[agenda_df['status'] == 'falta'])
@@ -654,7 +683,7 @@ elif menu == "🗓️ Agenda da Semana":
         if 'conn' in locals() and conn:
             conn.close()
 
-# 6. REGISTRAR CONSULTA REALIZADA - COM OPÇÃO NÃO COMPARECEU
+# 6. REGISTRAR CONSULTA REALIZADA - SEM SENHA
 elif menu == "✅ Registrar Consulta Realizada":
     st.header("✅ Registrar Consulta Realizada")
     
@@ -692,7 +721,6 @@ elif menu == "✅ Registrar Consulta Realizada":
             with col1:
                 if st.button("✅ Realizada", type="primary", use_container_width=True):
                     consulta_id = converter_numpy_para_python(consulta_info['id'])
-                    
                     cur = conn.cursor()
                     cur.execute("UPDATE consultas SET status = 'realizada' WHERE id = %s", (consulta_id,))
                     conn.commit()
@@ -702,7 +730,6 @@ elif menu == "✅ Registrar Consulta Realizada":
             with col2:
                 if st.button("❌ Não compareceu", use_container_width=True):
                     consulta_id = converter_numpy_para_python(consulta_info['id'])
-                    
                     cur = conn.cursor()
                     cur.execute("UPDATE consultas SET status = 'falta' WHERE id = %s", (consulta_id,))
                     conn.commit()
@@ -713,7 +740,6 @@ elif menu == "✅ Registrar Consulta Realizada":
                 if not consulta_info['pagamento_realizado'] and consulta_info['status'] == 'realizada':
                     if st.button("💰 Pagamento", use_container_width=True):
                         consulta_id = converter_numpy_para_python(consulta_info['id'])
-                        
                         cur = conn.cursor()
                         cur.execute("UPDATE consultas SET pagamento_realizado = TRUE WHERE id = %s", (consulta_id,))
                         conn.commit()
@@ -730,7 +756,7 @@ elif menu == "✅ Registrar Consulta Realizada":
         if 'conn' in locals() and conn:
             conn.close()
 
-# 7. ESTATÍSTICAS
+# 7. ESTATÍSTICAS - SEM SENHA (apenas números, sem dados individuais)
 elif menu == "📊 Estatísticas":
     st.header("📊 Estatísticas do Consultório")
     
@@ -816,8 +842,7 @@ st.markdown(
     "<div style='text-align: center; color: #666; padding: 10px;'>"
     "🧠 <b>Atendimento Viana</b> - Consultório de Psicologia | "
     "📞 Contacto: +238 594 99 55 | "
-    "📧 Email: belindaviana08@gmail.com | "
-    "🌐 https://plataformapsicologiaviana-belinda1988.streamlit.app/"
+    "📧 Email: belindaviana08@gmail.com"
     "</div>", 
     unsafe_allow_html=True
 )
