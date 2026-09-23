@@ -341,7 +341,7 @@ elif menu == "📅 Marcar Consulta":
             conn.close()
 
 # ============================================================
-# 3. VER PACIENTES - RESTRITO (COM SENHA)
+# 3. VER PACIENTES - RESTRITO (COM SENHA) - COM EDIÇÃO INLINE
 # ============================================================
 elif menu == "👥 Ver Pacientes":
     st.header("👥 Lista de Pacientes")
@@ -365,7 +365,120 @@ elif menu == "👥 Ver Pacientes":
             """, conn)
             
             if not pacientes_df.empty:
+                # Buscar dados completos para edição (incluindo campos não exibidos)
+                pacientes_completos_df = pd.read_sql("""
+                    SELECT id, nome_completo, telefone, email, data_nascimento, sexo,
+                           profissao, como_chegou, queixa_principal, medicacoes_atuais, 
+                           observacoes_iniciais, local
+                    FROM pacientes 
+                    WHERE ativo = TRUE
+                    ORDER BY nome_completo
+                """, conn)
+                
+                st.subheader("📋 Tabela de Pacientes")
                 st.dataframe(pacientes_df, use_container_width=True)
+                
+                st.markdown("---")
+                st.subheader("✏️ Edição Rápida")
+                st.info("💡 Selecione um paciente abaixo para editar os campos (exceto ID e Nome Completo).")
+                
+                # Seleção do paciente para edição inline
+                paciente_editar = st.selectbox(
+                    "Selecione o paciente para editar:",
+                    pacientes_completos_df['nome_completo'],
+                    key="select_edicao_inline"
+                )
+                
+                paciente_row = pacientes_completos_df[pacientes_completos_df['nome_completo'] == paciente_editar].iloc[0]
+                paciente_id_editar = converter_numpy_para_python(paciente_row['id'])
+                
+                # Formulário de edição inline (ID e Nome Completo desabilitados)
+                with st.form("form_edicao_inline"):
+                    st.markdown(f"**Editando:** {paciente_editar} (ID: {paciente_id_editar})")
+                    
+                    col_e1, col_e2 = st.columns(2)
+                    
+                    with col_e1:
+                        # ID e Nome Completo - desabilitados
+                        st.text_input("ID", value=str(paciente_id_editar), disabled=True, key="edit_id")
+                        st.text_input("Nome Completo", value=paciente_row['nome_completo'], disabled=True, key="edit_nome")
+                        
+                        telefone_edit = st.text_input("Telefone", value=paciente_row['telefone'] if paciente_row['telefone'] else "", key="edit_telefone")
+                        email_edit = st.text_input("Email", value=paciente_row['email'] if paciente_row['email'] else "", key="edit_email")
+                        
+                        # Data de nascimento
+                        data_nasc_edit = None
+                        if paciente_row['data_nascimento']:
+                            try:
+                                data_nasc_edit = paciente_row['data_nascimento']
+                                if isinstance(data_nasc_edit, str):
+                                    data_nasc_edit = datetime.strptime(data_nasc_edit, '%Y-%m-%d').date()
+                            except:
+                                data_nasc_edit = None
+                        
+                        data_nascimento_edit = st.date_input(
+                            "Data de Nascimento",
+                            value=data_nasc_edit,
+                            min_value=date(1930, 1, 1),
+                            max_value=date.today(),
+                            format="DD/MM/YYYY",
+                            key="edit_data_nasc"
+                        )
+                        
+                        local_edit = st.text_input("Localidade", value=paciente_row['local'] if paciente_row['local'] else "", key="edit_local")
+                    
+                    with col_e2:
+                        sexo_edit = st.selectbox(
+                            "Sexo",
+                            ["Feminino", "Masculino"],
+                            index=["Feminino", "Masculino"].index(paciente_row['sexo']) if paciente_row['sexo'] in ["Feminino", "Masculino"] else 0,
+                            key="edit_sexo"
+                        )
+                        profissao_edit = st.text_input("Profissão", value=paciente_row['profissao'] if paciente_row['profissao'] else "", key="edit_profissao")
+                        como_chegou_edit = st.selectbox(
+                            "Como chegou até nós",
+                            ["Indicação", "Internet", "Redes Sociais", "Outro"],
+                            index=["Indicação", "Internet", "Redes Sociais", "Outro"].index(paciente_row['como_chegou']) if paciente_row['como_chegou'] in ["Indicação", "Internet", "Redes Sociais", "Outro"] else 0,
+                            key="edit_como_chegou"
+                        )
+                        queixa_principal_edit = st.text_area(
+                            "Queixa Principal",
+                            value=paciente_row['queixa_principal'] if paciente_row['queixa_principal'] else "",
+                            height=100,
+                            key="edit_queixa"
+                        )
+                    
+                    medicacoes_edit = st.text_input(
+                        "Medicações Atuais",
+                        value=paciente_row['medicacoes_atuais'] if paciente_row['medicacoes_atuais'] else "",
+                        key="edit_medicacoes"
+                    )
+                    observacoes_edit = st.text_area(
+                        "Observações",
+                        value=paciente_row['observacoes_iniciais'] if paciente_row['observacoes_iniciais'] else "",
+                        height=80,
+                        key="edit_observacoes"
+                    )
+                    
+                    if st.form_submit_button("💾 Salvar Alterações", type="primary", use_container_width=True):
+                        try:
+                            cur = conn.cursor()
+                            cur.execute("""
+                                UPDATE pacientes 
+                                SET telefone = %s, email = %s, data_nascimento = %s, sexo = %s,
+                                    profissao = %s, como_chegou = %s, queixa_principal = %s,
+                                    medicacoes_atuais = %s, observacoes_iniciais = %s, local = %s
+                                WHERE id = %s
+                            """, (telefone_edit, email_edit, data_nascimento_edit, sexo_edit,
+                                  profissao_edit, como_chegou_edit, queixa_principal_edit,
+                                  medicacoes_edit, observacoes_edit, local_edit, paciente_id_editar))
+                            conn.commit()
+                            st.success("✅ Dados atualizados com sucesso!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"❌ Erro ao atualizar: {e}")
+                
+                st.markdown("---")
                 
                 col1, col2, col3 = st.columns(3)
                 with col1:
